@@ -1,6 +1,6 @@
-# phytec-handheld-launcher
+# meta-phytec-launcher
 
-A touchscreen and keyboard navigable LVGL game/app running under a Weston Wayland compositor.
+A Yocto Scarthgap (5.0) layer that builds and deploys **phytec-launcher** — a touchscreen and keyboard navigable LVGL game/app launcher for the [PHYTEC AM62P SoM](https://www.phytec.com/product/phycore-am62x/), running under a Weston Wayland compositor.
 
 The launcher displays a card grid of installed applications and launches them as Wayland clients via `fork()`/`execv()`. While a child app is running, the launcher minimizes its Weston window and keeps the Wayland event loop alive. When the app exits, the launcher window is automatically restored.
 
