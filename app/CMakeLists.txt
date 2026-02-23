@@ -103,9 +103,12 @@ add_executable(phytec-launcher ${LAUNCHER_SOURCES} ${LVGL_SOURCES})
 add_custom_target(wayland_protocols DEPENDS "${XDG_SHELL_HEADER}")
 add_dependencies(phytec-launcher wayland_protocols)
 
+get_filename_component(LVGL_INCLUDE_PARENT "${LVGL_DIR}" DIRECTORY)
+
 target_include_directories(phytec-launcher PRIVATE
     "${CMAKE_SOURCE_DIR}"          # lv_conf.h
-    "${LVGL_DIR}"                  # lvgl/lvgl.h
+    "${LVGL_INCLUDE_PARENT}"       # so #include "lvgl/src/..." resolves correctly
+    "${LVGL_DIR}"                  # so #include "lvgl.h" also works (flat includes)
     "${CMAKE_BINARY_DIR}"          # generated wayland_xdg_shell.h
 )
 
