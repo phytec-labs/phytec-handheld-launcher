@@ -1,10 +1,10 @@
 /**
  * lv_conf.h
- * LVGL v9 configuration for PHYTEC AM62P launcher
- * Display: 1280x720 via Wayland (Weston compositor)
+ * LVGL v9.1 configuration for PHYTEC AM62P launcher
+ * Display backend: SDL2 (runs as a Wayland client via SDL's Wayland backend)
  */
 
-#if 1 /* Set to "1" to enable content */
+#if 1
 
 #ifndef LV_CONF_H
 #define LV_CONF_H
@@ -20,7 +20,7 @@
    MEMORY SETTINGS
  *====================*/
 #define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (512U * 1024U) /* 512 KB */
+#define LV_MEM_SIZE (512U * 1024U)
 
 /*====================
    DISPLAY
@@ -33,28 +33,23 @@
 #define LV_INDEV_DEF_READ_PERIOD 16
 
 /*====================
-   WAYLAND DRIVER
+   SDL2 DRIVER
  *====================*/
-#define LV_USE_WAYLAND 1
+#define LV_USE_SDL 1
 
 /*
- * Use SHM (shared memory) rendering — compatible with all Wayland compositors
- * including Weston without requiring EGL/GPU setup.
+ * SDL renders into a window on the Wayland compositor — exactly the same
+ * way the existing 3D demo works. SDL's Wayland backend is selected
+ * automatically at runtime via the SDL_VIDEODRIVER=wayland environment
+ * variable (set in the systemd unit).
  *
- * Set LV_WAYLAND_USE_DMABUF 1 if your BSP supports DMA-BUF and you want
- * GPU-accelerated rendering. Requires additional wayland-scanner protocol
- * generation in CMakeLists.txt (linux-dmabuf-v1.xml).
+ * Touch events arrive as SDL finger events and are handled by the SDL
+ * driver's built-in touch indev. No direct evdev access needed.
  */
-#define LV_WAYLAND_USE_DMABUF 0
 
-/*
- * Window decorations (title bar, borders) — not required for Weston kiosk mode
- * since we run fullscreen. Only needed for GNOME/Mutter compositors.
- */
-#define LV_WAYLAND_WINDOW_DECORATIONS 0
-
-/* Disable fbdev — we are using Wayland exclusively */
-#define LV_USE_LINUX_FBDEV 0
+/* Disable other display backends */
+#define LV_USE_LINUX_FBDEV  0
+#define LV_USE_WAYLAND      0
 
 /*====================
    FONT SETTINGS
@@ -65,32 +60,32 @@
 #define LV_FONT_DEFAULT &lv_font_montserrat_20
 
 /*====================
-   FEATURE CONFIGURATION
+   FEATURES
  *====================*/
-#define LV_USE_ANIMATION 1
-#define LV_USE_SHADOW    1
+#define LV_USE_ANIMATION  1
+#define LV_USE_SHADOW     1
 
-/* Widget set */
+/* Widgets */
 #define LV_USE_BTN    1
 #define LV_USE_LABEL  1
 #define LV_USE_IMG    1
 #define LV_USE_MSGBOX 1
 
-/* Group support (required for keyboard/keypad navigation) */
+/* Group support — required for keyboard navigation */
 #define LV_USE_GROUP  1
 
 /*====================
    LOGGING
  *====================*/
-#define LV_USE_LOG 1
-#define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
-#define LV_LOG_PRINTF 1
+#define LV_USE_LOG      1
+#define LV_LOG_LEVEL    LV_LOG_LEVEL_WARN
+#define LV_LOG_PRINTF   1
 
 /*====================
    ASSERT
  *====================*/
-#define LV_USE_ASSERT_NULL    1
-#define LV_USE_ASSERT_MALLOC  1
+#define LV_USE_ASSERT_NULL   1
+#define LV_USE_ASSERT_MALLOC 1
 
 #endif /* LV_CONF_H */
-#endif /* End of "1" enable */
+#endif

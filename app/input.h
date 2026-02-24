@@ -1,59 +1,51 @@
 /**
  * input.h
- * Input setup for the PHYTEC launcher running under a Wayland compositor.
+ * Input setup for the PHYTEC launcher using the LVGL SDL2 driver.
  *
- * When using the LVGL Wayland driver, touch, pointer, and keyboard input
- * are handled automatically by the driver for each window created with
- * lv_wayland_create_window(). We no longer open evdev nodes manually for
- * these devices — Weston routes input through the Wayland protocol instead.
+ * When using the LVGL SDL2 driver, touch and mouse input are handled
+ * automatically by lv_sdl_mouse_create() and keyboard input by
+ * lv_sdl_keyboard_create(). SDL routes Wayland touch events as finger
+ * events internally, so no direct evdev access is needed.
  *
- * This module's responsibility is narrowed to:
- *   1. Retrieving the Wayland-registered keyboard indev and assigning it
- *      to the LVGL navigation group so focus movement works.
- *   2. Providing stub hooks for the future MSPM0 I2C gamepad driver.
+ * This module's only job is to create those indevs and assign the
+ * keyboard to the LVGL navigation group.
  *
  * TODO (MSPM0 I2C joystick):
- *   When the I2C input driver is ready, add:
- *     - input_joystick_init(const char *i2c_dev, uint8_t addr, lv_group_t *g)
- *     - A polling thread or lv_timer callback that reads the MSPM0 over I2C
- *       and pushes the button/axis state into LVGL via a custom
- *       LV_INDEV_TYPE_KEYPAD indev registered with lv_indev_create().
+ *   When the I2C input driver is ready, register a custom
+ *   LV_INDEV_TYPE_KEYPAD indev here and assign it to nav_group.
+ *   The read callback should consult a mutex-protected state struct
+ *   updated by your I2C polling thread:
  *
- *   Suggested shared state between the I2C thread and LVGL main loop:
  *     typedef struct {
- *         pthread_mutex_t  lock;
- *         uint16_t         button_mask;   // raw bitmask from MSPM0
- *         int8_t           axis_x;        // joystick X  (-127..127)
- *         int8_t           axis_y;        // joystick Y  (-127..127)
+ *         pthread_mutex_t lock;
+ *         uint16_t        button_mask;  // raw bitmask from MSPM0
+ *         int8_t          axis_x;       // joystick X (-127..127)
+ *         int8_t          axis_y;       // joystick Y (-127..127)
  *     } mspm0_state_t;
  *
- *   The I2C thread writes under the mutex; the LVGL keypad read callback
- *   reads under the mutex and maps bits to LV_KEY_* values.
- *   Register the joystick indev with lv_indev_set_group(indev, nav_group)
- *   so it navigates the launcher alongside the Wayland keyboard.
+ *   Map D-pad bits → LV_KEY_UP/DOWN/LEFT/RIGHT, A → LV_KEY_ENTER,
+ *   B → LV_KEY_ESC. Call lv_indev_set_group(joystick_indev, nav_group).
  */
 
 #ifndef INPUT_H
 #define INPUT_H
 
 #include "lvgl/lvgl.h"
-#include "lvgl/src/drivers/wayland/lv_wayland.h"
 #include <stdbool.h>
 
 /**
- * input_setup - Assign Wayland-registered input devices to the nav group.
+ * input_setup - Create SDL2 indevs and assign keyboard to nav_group.
  *
- * Must be called after lv_wayland_create_window() so that the indev
- * handles are available.
+ * Must be called after lv_sdl_window_create().
  *
- * @param disp       The lv_display_t* returned by lv_wayland_create_window().
- * @param nav_group  The LVGL group that keyboard navigation should target.
+ * @param nav_group  The LVGL group that keyboard navigation targets.
+ * @return true on success.
  */
-void input_setup(lv_display_t *disp, lv_group_t *nav_group);
+bool input_setup(lv_group_t *nav_group);
 
 /*
  * TODO (MSPM0 I2C joystick):
- * bool input_joystick_init(const char *i2c_dev, uint8_t i2c_addr,
+ * bool input_joystick_init(const char *i2c_dev, uint8_t addr,
  *                          lv_group_t *nav_group);
  * void input_joystick_deinit(void);
  */
