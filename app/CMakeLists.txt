@@ -59,6 +59,7 @@ target_include_directories(phytec-launcher PRIVATE ${SDL2_INCLUDE_DIRS})
 
 target_link_libraries(phytec-launcher PRIVATE
     lvgl                  # liblvgl.so installed by the lvgl Yocto recipe
+    drm                   # liblvgl.so was built with DRM support; pull in libdrm
     ${SDL2_LIBRARIES}
     m
     pthread
