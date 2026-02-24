@@ -8,19 +8,15 @@
  * SDL_VIDEODRIVER=wayland is set in the environment (done in the systemd
  * unit).
  *
- * The main loop calls lv_timer_handler() directly — no special Wayland
- * timer wrapper is needed because SDL handles all compositor interaction
- * internally before returning from SDL_PollEvent, which LVGL's SDL driver
- * calls inside its tick timer.
- *
  * Environment variables (set in phytec-launcher.service):
- *   SDL_VIDEODRIVER=wayland   — use Weston, not x11 or offscreen
- *   SDL_AUDIODRIVER=dummy     — suppress audio init warnings
- *   DISPLAY                   — unset or empty (not needed for Wayland)
+ *   SDL_VIDEODRIVER=wayland   -- use Weston, not x11 or offscreen
+ *   SDL_AUDIODRIVER=dummy     -- suppress audio init warnings
  */
 
 #include "lvgl/lvgl.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_window.h"
+
+#include <SDL2/SDL.h>
 
 #include "input.h"
 #include "launcher.h"
@@ -97,20 +93,28 @@ int main(int argc, char *argv[])
      * given size, and registers the display driver with LVGL. When
      * SDL_VIDEODRIVER=wayland, SDL creates a Wayland surface on Weston
      * exactly like the 3D demo does.
-     *
-     * lv_sdl_window_set_fullscreen() expands the window to cover the
-     * entire screen — appropriate for a kiosk-style launcher.
      */
     lv_display_t *disp = lv_sdl_window_create(DISPLAY_W, DISPLAY_H);
+    (void)disp;
     if (!disp) {
         fprintf(stderr, "[main] Failed to create SDL2 window. "
                         "Is SDL_VIDEODRIVER=wayland set and Weston running?\n");
         return 1;
     }
 
-    lv_sdl_window_set_fullscreen(disp, true);
-    printf("[main] SDL2 window created (%dx%d, fullscreen)\n",
-           DISPLAY_W, DISPLAY_H);
+    /*
+     * Go fullscreen via SDL directly — lv_sdl_window_set_fullscreen()
+     * does not exist in LVGL v9.1. SDL_GetWindowFromID(1) is safe here
+     * because lv_sdl_window_create() opens exactly one window.
+     */
+    SDL_Window *sdl_win = SDL_GetWindowFromID(1);
+    if (sdl_win) {
+        SDL_SetWindowFullscreen(sdl_win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+        printf("[main] SDL2 window created (%dx%d, fullscreen)\n",
+               DISPLAY_W, DISPLAY_H);
+    } else {
+        fprintf(stderr, "[main] Warning: could not get SDL window handle\n");
+    }
 
     /* 3. Create navigation group and set up input devices */
     lv_group_t *nav_group = lv_group_create();
@@ -118,9 +122,12 @@ int main(int argc, char *argv[])
 
     input_setup(nav_group);
 
-    /* 4. Build the launcher UI, passing the SDL_Window for hide/restore */
-    SDL_Window *sdl_win = lv_sdl_window_get_sdl_window(disp);
-    launcher_create(nav_group, sdl_win);
+    /*
+     * 4. Build the launcher UI.
+     *    launcher.c retrieves the SDL window itself via SDL_GetWindowFromID(1)
+     *    for hide/restore when launching child apps.
+     */
+    launcher_create(nav_group);
 
     /*
      * 5. Main loop.
@@ -130,11 +137,10 @@ int main(int argc, char *argv[])
      * busy-waiting, capped at 10 ms to stay responsive to signals and to
      * give the SIGCHLD handler a chance to run after a child app exits.
      *
-     * TODO (MSPM0 I2C joystick — single-threaded polling):
+     * TODO (MSPM0 I2C joystick -- single-threaded polling):
      * If the I2C poll runs in the main thread rather than a pthread,
      * call it here before sleeping:
      *     mspm0_poll();   // non-blocking I2C read, update shared state
-     * If polling latency becomes an issue, move it to a pthread instead.
      */
     printf("[main] Launcher running.\n");
 

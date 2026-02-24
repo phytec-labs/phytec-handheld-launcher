@@ -1,31 +1,33 @@
 /**
  * launcher.h
- * LVGL-based game/app launcher UI for the PHYTEC AM62P.
+ * LVGL launcher UI: card grid and async app launching (SDL2 backend).
  *
- * The launcher displays a grid of app cards. Each card can be activated
- * by touch tap or keyboard/keypad Enter. Activating a card hides the
- * launcher window, forks a child process to run the app, and restores
- * the window when the child exits.
+ * Window visibility while a child app is running is managed via SDL2
+ * directly (SDL_MinimizeWindow / SDL_ShowWindow). The SDL_Window handle
+ * is retrieved internally via SDL_GetWindowFromID(1) so callers don't
+ * need to pass it in.
  *
- * Display backend: SDL2 (Wayland surface managed by SDL, same as the
- * existing AM62P 3D demo). SDL_HideWindow / SDL_ShowWindow are used to
- * step aside while a child app runs.
+ * TODO (custom icons):
+ *   Replace LV_SYMBOL_* with per-app PNG icons loaded via lv_image_set_src().
+ *
+ * TODO (status bar):
+ *   Add battery, Wi-Fi, and clock widgets to a top bar container.
+ *
+ * TODO (runtime app list):
+ *   Replace the compiled-in apps.h list with a JSON/INI parser.
  */
 
 #ifndef LAUNCHER_H
 #define LAUNCHER_H
 
 #include "lvgl/lvgl.h"
-#include "apps.h"
 
 /**
- * launcher_create - Build the launcher UI on the active LVGL display.
+ * launcher_create - Build the launcher UI and register the SIGCHLD handler.
  *
- * @param nav_group  An already-created lv_group_t that keyboard/keypad
- *                   indevs will navigate. Cards are added to this group.
+ * Must be called after lv_sdl_window_create() and input_setup().
  *
- * Call once after lv_init() and lv_sdl_window_create().
- * Installs a SIGCHLD handler internally for async child exit detection.
+ * @param nav_group  The LVGL group for keyboard/gamepad focus navigation.
  */
 void launcher_create(lv_group_t *nav_group);
 
