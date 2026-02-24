@@ -10,7 +10,6 @@ endif()
 # ---------------------------------------------------------------------------
 # LVGL include location
 # Passed in by the Yocto recipe as -DLVGL_DIR=${STAGING_INCDIR}/lvgl
-# For local development, point this at your lvgl checkout.
 # ---------------------------------------------------------------------------
 if(NOT DEFINED LVGL_DIR)
     set(LVGL_DIR "${CMAKE_SOURCE_DIR}/lvgl")
@@ -23,7 +22,8 @@ message(STATUS "LVGL_DIR = ${LVGL_DIR}")
 get_filename_component(LVGL_INCLUDE_PARENT "${LVGL_DIR}" DIRECTORY)
 
 # ---------------------------------------------------------------------------
-# Launcher sources only — LVGL is a pre-built shared library in Yocto
+# Launcher sources only — LVGL (including SDL driver) is a pre-built
+# shared library rebuilt with PACKAGECONFIG:append:pn-lvgl = " sdl"
 # ---------------------------------------------------------------------------
 set(LAUNCHER_SOURCES
     main.c
@@ -50,7 +50,7 @@ target_compile_options(phytec-launcher PRIVATE
 )
 
 # ---------------------------------------------------------------------------
-# Libraries — link against the installed lvgl and SDL2 shared libraries
+# Libraries
 # ---------------------------------------------------------------------------
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -58,17 +58,15 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 target_include_directories(phytec-launcher PRIVATE ${SDL2_INCLUDE_DIRS})
 
 target_link_libraries(phytec-launcher PRIVATE
-    lvgl                  # liblvgl.so installed by the lvgl Yocto recipe
-    drm                   # liblvgl.so was built with DRM support; pull in libdrm
+    lvgl              # liblvgl.so rebuilt with SDL driver via PACKAGECONFIG
+    drm               # liblvgl.so was built with DRM support
     ${SDL2_LIBRARIES}
     m
     pthread
 )
 
-# Tell the linker where to find liblvgl.so in the sysroot
 target_link_directories(phytec-launcher PRIVATE
     "${CMAKE_SYSROOT}/usr/lib"
-    "${CMAKE_SYSROOT}/usr/${CMAKE_INSTALL_LIBDIR}"
 )
 
 # ---------------------------------------------------------------------------

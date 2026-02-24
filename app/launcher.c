@@ -108,7 +108,7 @@ void launcher_create(lv_group_t *nav_group)
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, "PHYTEC Launcher");
     lv_obj_set_style_text_color(title, COLOR_ACCENT, 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
     /* Card grid container */
@@ -148,7 +148,7 @@ void launcher_create(lv_group_t *nav_group)
         /* Icon */
         lv_obj_t *icon = lv_label_create(card);
         lv_label_set_text(icon, LAUNCHER_APPS[i].icon_symbol);
-        lv_obj_set_style_text_font(icon, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(icon, COLOR_ACCENT, 0);
         lv_obj_align(icon, LV_ALIGN_CENTER, 0, -20);
 
@@ -156,7 +156,7 @@ void launcher_create(lv_group_t *nav_group)
         lv_obj_t *lbl = lv_label_create(card);
         lv_label_set_text(lbl, LAUNCHER_APPS[i].name);
         lv_obj_set_style_text_color(lbl, COLOR_TEXT, 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(lbl, 190);
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
