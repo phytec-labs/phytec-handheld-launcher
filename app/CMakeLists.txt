@@ -61,6 +61,7 @@ target_link_libraries(phytec-launcher PRIVATE
     lvgl              # liblvgl.so rebuilt with SDL driver via PACKAGECONFIG
     drm               # liblvgl.so was built with DRM support
     ${SDL2_LIBRARIES}
+    SDL2_image
     m
     pthread
 )
