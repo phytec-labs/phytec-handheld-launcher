@@ -118,8 +118,9 @@ int main(int argc, char *argv[])
 
     input_setup(nav_group);
 
-    /* 4. Build the launcher UI */
-    launcher_create(nav_group);
+    /* 4. Build the launcher UI, passing the SDL_Window for hide/restore */
+    SDL_Window *sdl_win = lv_sdl_window_get_sdl_window(disp);
+    launcher_create(nav_group, sdl_win);
 
     /*
      * 5. Main loop.

@@ -1,18 +1,19 @@
 /**
  * launcher.c
- * LVGL launcher UI: card grid and async app launching under Wayland.
+ * LVGL launcher UI: card grid and async app launching via SDL2/Weston.
  *
- * Process model (Wayland version):
- *   When a card is activated, the launcher minimizes its Weston window and
- *   forks a child process to run the app. Rather than blocking the main loop
- *   with waitpid(), we catch SIGCHLD and check for child exit using
+ * Process model (SDL2 version):
+ *   When a card is activated, the launcher hides its SDL window so the
+ *   child app's window appears on screen. Rather than blocking the main
+ *   loop with waitpid(), we catch SIGCHLD and check for child exit using
  *   waitpid(WNOHANG) inside the LVGL timer loop. When the child exits,
- *   the launcher window is restored and the UI resumes.
+ *   the launcher window is shown again and the UI resumes.
  *
- *   This keeps the Wayland event loop alive while the app is running, which
- *   is necessary for the Weston compositor to correctly manage our surface.
- *   Blocking the loop would starve Weston of frame callbacks and could cause
- *   the compositor to kill our client.
+ *   SDL_HideWindow / SDL_ShowWindow are used instead of the Wayland
+ *   driver's lv_wayland_window_set_minimized(), since SDL manages the
+ *   Wayland surface internally. The SDL window handle is obtained from
+ *   the LVGL display via SDL_GetWindowFromID(1) — valid because the
+ *   launcher creates exactly one SDL window.
  *
  * Layout (1280x720):
  *   - Full-screen dark background
@@ -23,6 +24,8 @@
 
 #include "launcher.h"
 #include "apps.h"
+
+#include <SDL2/SDL.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,9 +59,8 @@
 /*  Child process state                                                 */
 /* ------------------------------------------------------------------ */
 
-static pid_t            s_child_pid  = -1;
-static lv_display_t    *s_disp       = NULL;  /* Set by launcher_create() */
-static lv_timer_t      *s_wait_timer = NULL;  /* Polls for child exit     */
+static pid_t        s_child_pid  = -1;
+static lv_timer_t  *s_wait_timer = NULL;
 
 /*
  * s_child_exited is set to 1 by the SIGCHLD handler and read by the
@@ -66,6 +68,20 @@ static lv_timer_t      *s_wait_timer = NULL;  /* Polls for child exit     */
  * without needing a mutex for this single-flag pattern.
  */
 static atomic_int s_child_exited = 0;
+
+/* ------------------------------------------------------------------ */
+/*  SDL window helper                                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The launcher creates exactly one SDL window (window ID 1).
+ * SDL_GetWindowFromID() is the portable way to retrieve it without
+ * storing a global SDL_Window* across compilation units.
+ */
+static SDL_Window *get_sdl_window(void)
+{
+    return SDL_GetWindowFromID(1);
+}
 
 /* ------------------------------------------------------------------ */
 /*  SIGCHLD handler                                                     */
@@ -79,7 +95,7 @@ static void sigchld_handler(int sig)
 
 /* ------------------------------------------------------------------ */
 /*  Child exit timer callback                                           */
-/*  Runs in the LVGL main loop — safe to call LVGL APIs here.          */
+/*  Runs in the LVGL main loop — safe to call LVGL and SDL APIs here.  */
 /* ------------------------------------------------------------------ */
 
 static void child_wait_timer_cb(lv_timer_t *timer)
@@ -107,7 +123,6 @@ static void child_wait_timer_cb(lv_timer_t *timer)
             printf("[launcher] Child %d killed by signal %d\n",
                    s_child_pid, WTERMSIG(status));
     } else {
-        /* waitpid error — log and clean up anyway */
         fprintf(stderr, "[launcher] waitpid error: %s\n", strerror(errno));
     }
 
@@ -120,9 +135,10 @@ static void child_wait_timer_cb(lv_timer_t *timer)
     s_wait_timer = NULL;
 
     /* Restore the launcher window */
-    if (s_disp) {
-        lv_wayland_window_set_minimized(s_disp, false);
-        lv_wayland_window_set_fullscreen(s_disp, true);
+    SDL_Window *win = get_sdl_window();
+    if (win) {
+        SDL_ShowWindow(win);
+        SDL_RaiseWindow(win);
         printf("[launcher] Window restored\n");
     }
 }
@@ -142,14 +158,14 @@ static void launch_app(const launcher_app_t *app)
     printf("[launcher] Launching: %s\n", app->binary_path);
 
     /*
-     * Minimize our Weston surface before forking so the child's window
-     * appears on top cleanly. We stay alive as a Wayland client so
-     * Weston doesn't tear down our surface.
+     * Hide our SDL window before forking so the child's window is
+     * visible. SDL_HideWindow removes our Wayland surface from the
+     * compositor's display stack without destroying it, so we can
+     * SDL_ShowWindow() it again when the child exits.
      */
-    if (s_disp) {
-        lv_wayland_window_set_fullscreen(s_disp, false);
-        lv_wayland_window_set_minimized(s_disp, true);
-    }
+    SDL_Window *win = get_sdl_window();
+    if (win)
+        SDL_HideWindow(win);
 
     /* Reset the exit flag before fork so we don't double-trigger */
     atomic_store(&s_child_exited, 0);
@@ -159,9 +175,9 @@ static void launch_app(const launcher_app_t *app)
     if (pid < 0) {
         fprintf(stderr, "[launcher] fork() failed: %s\n", strerror(errno));
         /* Restore window if fork fails */
-        if (s_disp) {
-            lv_wayland_window_set_minimized(s_disp, false);
-            lv_wayland_window_set_fullscreen(s_disp, true);
+        if (win) {
+            SDL_ShowWindow(win);
+            SDL_RaiseWindow(win);
         }
         return;
     }
@@ -169,11 +185,10 @@ static void launch_app(const launcher_app_t *app)
     if (pid == 0) {
         /*
          * ---- Child process ----
-         * The child is a regular Wayland client — it will connect to Weston
-         * using WAYLAND_DISPLAY from the environment (inherited from the
-         * launcher). No special setup needed.
-         *
-         * execv replaces the process image with the game binary.
+         * The child inherits WAYLAND_DISPLAY and XDG_RUNTIME_DIR from
+         * the launcher's environment (set in the systemd unit), so it
+         * can connect to Weston as a normal Wayland client. No special
+         * setup needed — execv replaces the process image.
          */
         execv(app->binary_path, (char *const *)app->argv);
 
@@ -196,10 +211,9 @@ static void launch_app(const launcher_app_t *app)
 
     /*
      * TODO (multi-app):
-     * If you ever want to show a "now playing" screen with a "force quit"
-     * button while the child runs, create that screen here and load it
-     * instead of just minimizing. The timer callback would delete it when
-     * the child exits and reload the launcher screen.
+     * If you ever want to show a "now playing" screen while the child
+     * runs, create that screen here before hiding the window. The timer
+     * callback would delete it and reload the launcher screen on exit.
      */
 }
 
@@ -232,9 +246,9 @@ static void card_event_cb(lv_event_t *e)
 /*  Card factory                                                        */
 /* ------------------------------------------------------------------ */
 
-static lv_obj_t *create_card(lv_obj_t          *parent,
+static lv_obj_t *create_card(lv_obj_t *parent,
                               const launcher_app_t *app,
-                              lv_group_t        *nav_group)
+                              lv_group_t *nav_group)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_set_size(card, CARD_W, CARD_H);
@@ -319,11 +333,8 @@ static void create_header(lv_obj_t *parent)
 /*  Public API                                                          */
 /* ------------------------------------------------------------------ */
 
-void launcher_create(lv_display_t *disp, lv_group_t *nav_group)
+void launcher_create(lv_group_t *nav_group)
 {
-    /* Store display handle for window minimize/restore */
-    s_disp = disp;
-
     /* Install SIGCHLD handler for async child exit detection */
     struct sigaction sa = {0};
     sa.sa_handler = sigchld_handler;
