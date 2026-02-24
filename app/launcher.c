@@ -59,11 +59,12 @@ static lv_timer_t  *s_wait_timer = NULL;
 
 static SDL_Window *get_sdl_win(void)
 {
-    /*
-     * lv_sdl_window_create() always opens the first SDL window, so ID 1
-     * is reliable for this single-window application.
-     */
-    return SDL_GetWindowFromID(1);
+    /* Scan for the window created by lv_sdl_window_create(). */
+    for (uint32_t wid = 1; wid <= 16; wid++) {
+        SDL_Window *w = SDL_GetWindowFromID(wid);
+        if (w) return w;
+    }
+    return NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,7 +210,16 @@ static void launch_app(int index)
     }
 
     if (s_child_pid == 0) {
-        /* Child: inherits WAYLAND_DISPLAY / XDG_RUNTIME_DIR / SDL_VIDEODRIVER */
+        /*
+         * Child: release the inherited SDL/Wayland connection before exec.
+         * fork() duplicates all open file descriptors including the Wayland
+         * socket SDL holds. If we don't release them, the child app's own
+         * SDL_Init() will fail with "wayland not available" because the
+         * compositor sees a conflicting connection on the same socket.
+         * SDL_Quit() here only affects the child's copy — the parent is
+         * unaffected.
+         */
+        SDL_Quit();
         execv(app->binary_path, (char *const *)app->argv);
         perror("[launcher:child] execv");
         _exit(127);
