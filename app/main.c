@@ -80,6 +80,8 @@ int main(int argc, char *argv[])
 {
     (void)argc; (void)argv;
 
+    printf("[main] phytec-launcher build: %s %s", __DATE__, __TIME__);
+
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
 
