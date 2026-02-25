@@ -21,7 +21,8 @@ static int win_h = 480;
 static void btn_click_cb(lv_event_t *e)
 {
     static int count = 0;
-    auto *lbl = static_cast<lv_obj_t *>(lv_obj_get_user_data(lv_event_get_target(e)));
+    lv_obj_t *btn = static_cast<lv_obj_t *>(lv_event_get_target(e));
+    lv_obj_t *lbl = static_cast<lv_obj_t *>(lv_obj_get_user_data(btn));
     count++;
     lv_label_set_text_fmt(lbl, "Count: %d", count);
 }
@@ -74,7 +75,7 @@ static void build_ui()
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, "Hello, World!");
     lv_obj_set_style_text_color(title, lv_color_hex(0xe0e0ff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_align(title, LV_ALIGN_CENTER, 0, -80);
 
     /* Subtitle */
