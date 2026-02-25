@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <SDL2/SDL.h>
@@ -9,38 +10,62 @@
 #include "lvgl/lvgl.h"
 
 /* ------------------------------------------------------------------ */
-/*  Game definitions                                                    */
+/*  Constants                                                           */
+/* ------------------------------------------------------------------ */
+#define MAX_GAMES       12
+#define MAX_ARGS        8
+#define MAX_STR         256
+#define CONFIG_PATH     "/etc/phytec-launcher/launcher.conf"
+#define COLS            3
+#define ROWS            2
+#define HEADER_H        54
+#define PAD             20
+#define GAP             16
+
+/* ------------------------------------------------------------------ */
+/*  Modern minimal color palette                                        */
+/* ------------------------------------------------------------------ */
+#define COL_BG          0x0d1117   /* page background                 */
+#define COL_HEADER      0x161b22   /* header bar                      */
+#define COL_CARD        0x1c2333   /* card face                       */
+#define COL_CARD_BORDER 0x30363d   /* card border (unselected)        */
+#define COL_ACCENT      0x58a6ff   /* selected border / highlight     */
+#define COL_TEXT        0xe6edf3   /* primary text                    */
+#define COL_SUBTEXT     0x8b949e   /* secondary text / hints          */
+#define COL_PRESSED     0x0d419d   /* card tint when pressed          */
+
+/* ------------------------------------------------------------------ */
+/*  Game entry                                                          */
 /* ------------------------------------------------------------------ */
 struct Game {
-    const char  *name;
-    const char  *binary;
-    lv_color_t   card_color;
-    const char  *args[8];
+    char name[MAX_STR];
+    char binary[MAX_STR];
+    char args[MAX_ARGS][MAX_STR];
+    int  num_args;
 };
 
-static const Game games[] = {
-    { "SuperTuxKart", "/usr/bin/supertuxkart", lv_color_hex(0x1565C0),
-      { "--fullscreen", nullptr } },
-    { "Neverball",    "/usr/bin/neverball",    lv_color_hex(0x2E7D32),
-      { "-f", nullptr } },
-    { "Neverputt",    "/usr/bin/neverputt",    lv_color_hex(0x00695C),
-      { "-f", nullptr } },
-    { "RetroArch",    "/usr/bin/retroarch",    lv_color_hex(0x6A1B9A),
-      { "-f", nullptr } },
-};
-static const int NUM_GAMES = sizeof(games) / sizeof(games[0]);
-static const int COLS      = 2;
-static const int ROWS      = 2;
+static Game  games[MAX_GAMES];
+static int   num_games    = 0;
 
 /* ------------------------------------------------------------------ */
 /*  Display & renderer globals                                          */
 /* ------------------------------------------------------------------ */
-static SDL_Window        *sdl_window    = nullptr;
-static SDL_Renderer      *sdl_renderer  = nullptr;
-static SDL_Texture       *sdl_texture   = nullptr;
-static SDL_GameController *sdl_gamepad  = nullptr;
-static int                win_w         = 800;
-static int                win_h         = 480;
+static SDL_Window        *sdl_window   = nullptr;
+static SDL_Renderer      *sdl_renderer = nullptr;
+static SDL_Texture       *sdl_texture  = nullptr;
+static SDL_GameController *sdl_gamepad = nullptr;
+static int                win_w        = 800;
+static int                win_h        = 480;
+
+/* ------------------------------------------------------------------ */
+/*  Navigation state                                                    */
+/* ------------------------------------------------------------------ */
+static int       selected_index  = 0;
+static lv_obj_t *cards[MAX_GAMES];
+
+/* Touch debounce — ignore touches briefly after returning from a game */
+static Uint32    resume_time     = 0;
+#define TOUCH_DEBOUNCE_MS  600
 
 /* ------------------------------------------------------------------ */
 /*  Forward declarations                                                */
@@ -49,33 +74,151 @@ static void launch_game(const Game *game);
 static void update_selection(int new_index);
 
 /* ------------------------------------------------------------------ */
-/*  Navigation state                                                    */
+/*  Config file parser                                                  */
 /* ------------------------------------------------------------------ */
-static int       selected_index = 0;
-static lv_obj_t *cards[NUM_GAMES];   /* keep refs to update highlight */
-
-/* ------------------------------------------------------------------ */
-/*  Card highlight helper                                               */
-/* ------------------------------------------------------------------ */
-static void update_selection(int new_index)
+static void write_default_config()
 {
-    /* Remove highlight from old */
-    lv_obj_set_style_border_width(cards[selected_index], 2, 0);
-    lv_obj_set_style_border_color(cards[selected_index],
-                                  lv_color_hex(0x3a3a5c), 0);
-    lv_obj_set_style_shadow_width(cards[selected_index], 20, 0);
-    lv_obj_set_style_shadow_opa(cards[selected_index], LV_OPA_40, 0);
+    /* Create directory if needed */
+    system("mkdir -p /etc/phytec-launcher");
 
-    selected_index = new_index;
+    FILE *f = fopen(CONFIG_PATH, "w");
+    if (!f) {
+        fprintf(stderr, "Could not write default config to %s\n", CONFIG_PATH);
+        return;
+    }
+    fprintf(f,
+        "# PHYTEC Game Launcher Configuration\n"
+        "# Each [game] block defines one application entry.\n"
+        "# args= is optional. Use space-separated arguments.\n"
+        "\n"
+        "[game]\n"
+        "name=SuperTuxKart\n"
+        "binary=/usr/bin/supertuxkart\n"
+        "args=--fullscreen\n"
+        "\n"
+        "[game]\n"
+        "name=Neverball\n"
+        "binary=/usr/bin/neverball\n"
+        "args=-f\n"
+        "\n"
+        "[game]\n"
+        "name=Neverputt\n"
+        "binary=/usr/bin/neverputt\n"
+        "args=-f\n"
+        "\n"
+        "[game]\n"
+        "name=RetroArch\n"
+        "binary=/usr/bin/retroarch\n"
+        "args=-f\n"
+    );
+    fclose(f);
+    printf("Default config written to %s\n", CONFIG_PATH);
+}
 
-    /* Apply highlight to new */
-    lv_obj_set_style_border_width(cards[selected_index], 4, 0);
-    lv_obj_set_style_border_color(cards[selected_index],
-                                  lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_shadow_width(cards[selected_index], 40, 0);
-    lv_obj_set_style_shadow_color(cards[selected_index],
-                                  lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_shadow_opa(cards[selected_index], LV_OPA_60, 0);
+static void trim(char *s)
+{
+    /* Strip leading whitespace */
+    char *p = s;
+    while (*p == ' ' || *p == '\t') p++;
+    if (p != s) memmove(s, p, strlen(p) + 1);
+
+    /* Strip trailing whitespace and newline */
+    int len = strlen(s);
+    while (len > 0 && (s[len-1] == '\n' || s[len-1] == '\r' ||
+                        s[len-1] == ' '  || s[len-1] == '\t')) {
+        s[--len] = '\0';
+    }
+}
+
+static void parse_args(Game *game, const char *args_str)
+{
+    /* Split args_str on spaces into game->args array */
+    char buf[MAX_STR];
+    strncpy(buf, args_str, MAX_STR - 1);
+    buf[MAX_STR - 1] = '\0';
+
+    game->num_args = 0;
+    char *token = strtok(buf, " ");
+    while (token && game->num_args < MAX_ARGS) {
+        strncpy(game->args[game->num_args], token, MAX_STR - 1);
+        game->num_args++;
+        token = strtok(nullptr, " ");
+    }
+}
+
+static void load_config()
+{
+    FILE *f = fopen(CONFIG_PATH, "r");
+    if (!f) {
+        printf("No config found, generating default at %s\n", CONFIG_PATH);
+        write_default_config();
+        f = fopen(CONFIG_PATH, "r");
+        if (!f) {
+            fprintf(stderr, "Failed to open config, using hardcoded defaults\n");
+            return;
+        }
+    }
+
+    char     line[MAX_STR];
+    Game    *current  = nullptr;
+    bool     in_game  = false;
+
+    while (fgets(line, sizeof(line), f)) {
+        trim(line);
+
+        /* Skip blank lines and comments */
+        if (line[0] == '\0' || line[0] == '#') continue;
+
+        if (strcmp(line, "[game]") == 0) {
+            if (num_games < MAX_GAMES) {
+                current = &games[num_games];
+                memset(current, 0, sizeof(Game));
+                num_games++;
+                in_game = true;
+            } else {
+                fprintf(stderr, "Max games (%d) reached, skipping\n", MAX_GAMES);
+                in_game = false;
+            }
+            continue;
+        }
+
+        if (!in_game || !current) continue;
+
+        /* Parse key=value */
+        char *eq = strchr(line, '=');
+        if (!eq) continue;
+
+        *eq = '\0';
+        char *key = line;
+        char *val = eq + 1;
+        trim(key);
+        trim(val);
+
+        if (strcmp(key, "name") == 0) {
+            strncpy(current->name, val, MAX_STR - 1);
+        } else if (strcmp(key, "binary") == 0) {
+            strncpy(current->binary, val, MAX_STR - 1);
+        } else if (strcmp(key, "args") == 0) {
+            parse_args(current, val);
+        }
+    }
+
+    fclose(f);
+    printf("Loaded %d game(s) from config\n", num_games);
+
+    /* Validate — remove entries with missing binary */
+    for (int i = 0; i < num_games; ) {
+        if (current->binary[0] == '\0' || access(games[i].binary, X_OK) != 0) {
+            fprintf(stderr, "Skipping '%s' — binary not found or not executable: %s\n",
+                    games[i].name, games[i].binary);
+            /* Shift remaining entries down */
+            for (int j = i; j < num_games - 1; j++)
+                games[j] = games[j + 1];
+            num_games--;
+        } else {
+            i++;
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -103,6 +246,13 @@ static bool    touch_pressed = false;
 
 static void read_cb(lv_indev_t * /*indev*/, lv_indev_data_t *data)
 {
+    /* Suppress all input during debounce window */
+    if (SDL_GetTicks() - resume_time < TOUCH_DEBOUNCE_MS) {
+        data->state   = LV_INDEV_STATE_RELEASED;
+        data->point.x = 0;
+        data->point.y = 0;
+        return;
+    }
     data->point.x = touch_x;
     data->point.y = touch_y;
     data->state   = touch_pressed ? LV_INDEV_STATE_PRESSED
@@ -110,19 +260,17 @@ static void read_cb(lv_indev_t * /*indev*/, lv_indev_data_t *data)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Gamepad init — opens first available controller                    */
+/*  Gamepad                                                             */
 /* ------------------------------------------------------------------ */
 static void init_gamepad()
 {
-    int num_joysticks = SDL_NumJoysticks();
-    printf("Joysticks found: %d\n", num_joysticks);
-
-    for (int i = 0; i < num_joysticks; i++) {
+    int n = SDL_NumJoysticks();
+    printf("Joysticks found: %d\n", n);
+    for (int i = 0; i < n; i++) {
         if (SDL_IsGameController(i)) {
             sdl_gamepad = SDL_GameControllerOpen(i);
             if (sdl_gamepad) {
-                printf("Gamepad opened: %s\n",
-                       SDL_GameControllerName(sdl_gamepad));
+                printf("Gamepad: %s\n", SDL_GameControllerName(sdl_gamepad));
                 return;
             }
         }
@@ -131,47 +279,32 @@ static void init_gamepad()
 }
 
 /* ------------------------------------------------------------------ */
-/*  Handle gamepad button press                                         */
+/*  Selection highlight                                                 */
 /* ------------------------------------------------------------------ */
-static void handle_gamepad_button(SDL_GameControllerButton btn,
-                                  bool &running)
+static void update_selection(int new_index)
 {
-    int col = selected_index % COLS;
-    int row = selected_index / COLS;
+    if (new_index < 0 || new_index >= num_games) return;
 
-    switch (btn) {
-        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-            if (col + 1 < COLS && selected_index + 1 < NUM_GAMES)
-                update_selection(selected_index + 1);
-            break;
+    /* Remove highlight from old selection */
+    lv_obj_set_style_border_width(cards[selected_index], 1, 0);
+    lv_obj_set_style_border_color(cards[selected_index],
+                                  lv_color_hex(COL_CARD_BORDER), 0);
+    lv_obj_set_style_shadow_width(cards[selected_index], 0, 0);
+    lv_obj_set_style_bg_color(cards[selected_index],
+                              lv_color_hex(COL_CARD), 0);
 
-        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-            if (col - 1 >= 0)
-                update_selection(selected_index - 1);
-            break;
+    selected_index = new_index;
 
-        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-            if (row + 1 < ROWS && selected_index + COLS < NUM_GAMES)
-                update_selection(selected_index + COLS);
-            break;
-
-        case SDL_CONTROLLER_BUTTON_DPAD_UP:
-            if (row - 1 >= 0)
-                update_selection(selected_index - COLS);
-            break;
-
-        case SDL_CONTROLLER_BUTTON_A:
-            launch_game(&games[selected_index]);
-            break;
-
-        case SDL_CONTROLLER_BUTTON_B:
-            /* B to quit launcher — useful for dev, remove for production */
-            running = false;
-            break;
-
-        default:
-            break;
-    }
+    /* Apply highlight to new selection */
+    lv_obj_set_style_border_width(cards[selected_index], 3, 0);
+    lv_obj_set_style_border_color(cards[selected_index],
+                                  lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_shadow_width(cards[selected_index], 30, 0);
+    lv_obj_set_style_shadow_color(cards[selected_index],
+                                  lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_shadow_opa(cards[selected_index], LV_OPA_30, 0);
+    lv_obj_set_style_bg_color(cards[selected_index],
+                              lv_color_hex(0x1a2744), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -190,10 +323,10 @@ static void launch_game(const Game *game)
     }
 
     if (pid == 0) {
-        const char *argv[16];
+        const char *argv[MAX_ARGS + 2];
         int argc = 0;
         argv[argc++] = game->binary;
-        for (int i = 0; game->args[i] != nullptr && argc < 15; i++)
+        for (int i = 0; i < game->num_args && argc < MAX_ARGS + 1; i++)
             argv[argc++] = game->args[i];
         argv[argc] = nullptr;
 
@@ -207,12 +340,14 @@ static void launch_game(const Game *game)
     printf("Game exited (status %d), returning to launcher\n",
            WEXITSTATUS(status));
 
-    /* Flush any button events that accumulated while the game was running.
-     * Without this, the quit button press from the game gets processed
-     * by the launcher immediately on resume and re-launches the game. */
+    /* Flush all stale input events accumulated while game was running */
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    touch_pressed = false;
 
-    /* Small delay to let the compositor settle before we reappear */
+    /* Record resume time — read_cb will suppress input for TOUCH_DEBOUNCE_MS */
+    resume_time = SDL_GetTicks();
+
+    /* Let compositor settle before showing the launcher */
     SDL_Delay(300);
 
     SDL_ShowWindow(sdl_window);
@@ -221,12 +356,48 @@ static void launch_game(const Game *game)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Card click event (touch/mouse)                                      */
+/*  Card touch callback                                                 */
 /* ------------------------------------------------------------------ */
 static void card_click_cb(lv_event_t *e)
 {
+    /* Double-check debounce at the LVGL event level too */
+    if (SDL_GetTicks() - resume_time < TOUCH_DEBOUNCE_MS) return;
+
     const Game *game = static_cast<const Game *>(lv_event_get_user_data(e));
     launch_game(game);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gamepad button handler                                              */
+/* ------------------------------------------------------------------ */
+static void handle_gamepad_button(SDL_GameControllerButton btn)
+{
+    int col = selected_index % COLS;
+    int row = selected_index / COLS;
+
+    switch (btn) {
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+            if (col + 1 < COLS && selected_index + 1 < num_games)
+                update_selection(selected_index + 1);
+            break;
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+            if (col - 1 >= 0)
+                update_selection(selected_index - 1);
+            break;
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+            if (selected_index + COLS < num_games)
+                update_selection(selected_index + COLS);
+            break;
+        case SDL_CONTROLLER_BUTTON_DPAD_UP:
+            if (row - 1 >= 0)
+                update_selection(selected_index - COLS);
+            break;
+        case SDL_CONTROLLER_BUTTON_A:
+            launch_game(&games[selected_index]);
+            break;
+        default:
+            break;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -234,15 +405,11 @@ static void card_click_cb(lv_event_t *e)
 /* ------------------------------------------------------------------ */
 static void build_ui()
 {
-    const int HEADER_H = 50;
-    const int PAD      = 24;
-    const int GAP      = 20;
-
     const int CARD_W = (win_w - PAD * 2 - GAP * (COLS - 1)) / COLS;
     const int CARD_H = (win_h - HEADER_H - PAD * 2 - GAP * (ROWS - 1)) / ROWS;
 
     lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(scr, 0, 0);
 
@@ -250,64 +417,73 @@ static void build_ui()
     lv_obj_t *header = lv_obj_create(scr);
     lv_obj_set_size(header, win_w, HEADER_H);
     lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(header, lv_color_hex(0x1a1a2e), 0);
+    lv_obj_set_style_bg_color(header, lv_color_hex(COL_HEADER), 0);
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_style_radius(header, 0, 0);
-    lv_obj_set_style_pad_all(header, 0, 0);
+    lv_obj_set_style_pad_hor(header, PAD, 0);
+    lv_obj_set_style_pad_ver(header, 0, 0);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Bottom border line on header as a separator */
+    lv_obj_set_style_border_side(header, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(header, 1, 0);
+    lv_obj_set_style_border_color(header, lv_color_hex(COL_CARD_BORDER), 0);
 
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text(title, "PHYTEC Game Launcher");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xe0e0ff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
 
-    /* ---- Controller hint ---- */
     lv_obj_t *hint = lv_label_create(header);
-    lv_label_set_text(hint, "D-Pad: Navigate   A: Launch");
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x6666aa), 0);
+    lv_label_set_text(hint, "D-Pad: Navigate     A: Launch");
+    lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* ---- Cards ---- */
-    for (int i = 0; i < NUM_GAMES; i++) {
+    for (int i = 0; i < num_games; i++) {
         int col = i % COLS;
         int row = i / COLS;
         int x   = PAD + col * (CARD_W + GAP);
         int y   = HEADER_H + PAD + row * (CARD_H + GAP);
 
         lv_obj_t *card = lv_obj_create(scr);
-        cards[i] = card;   /* store ref for highlight updates */
+        cards[i] = card;
 
         lv_obj_set_pos(card, x, y);
         lv_obj_set_size(card, CARD_W, CARD_H);
-        lv_obj_set_style_bg_color(card, games[i].card_color, 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(card, 20, 0);
-        lv_obj_set_style_border_width(card, 2, 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0x3a3a5c), 0);
-        lv_obj_set_style_shadow_width(card, 20, 0);
-        lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_shadow_opa(card, LV_OPA_40, 0);
-        lv_obj_set_style_bg_opa(card, LV_OPA_70, LV_STATE_PRESSED);
+        lv_obj_set_style_radius(card, 12, 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(COL_CARD_BORDER), 0);
+        lv_obj_set_style_shadow_width(card, 0, 0);
         lv_obj_set_style_pad_all(card, 12, 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(card, card_click_cb, LV_EVENT_CLICKED,
-                            const_cast<Game *>(&games[i]));
 
-        /* Centered game name */
-        lv_obj_t *name_label = lv_label_create(card);
-        lv_label_set_text(name_label, games[i].name);
-        lv_label_set_long_mode(name_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(name_label, CARD_W - 24);
-        lv_obj_set_style_text_color(name_label, lv_color_white(), 0);
-        lv_obj_set_style_text_font(name_label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_align(name_label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(name_label, LV_ALIGN_CENTER, 0, 0);
+        /* Pressed state */
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_PRESSED),
+                                  LV_STATE_PRESSED);
+        lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT),
+                                      LV_STATE_PRESSED);
+
+        lv_obj_add_event_cb(card, card_click_cb, LV_EVENT_CLICKED,
+                            &games[i]);
+
+        /* Game name — centered, primary text color */
+        lv_obj_t *name_lbl = lv_label_create(card);
+        lv_label_set_text(name_lbl, games[i].name);
+        lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(name_lbl, CARD_W - 24);
+        lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
     }
 
-    /* Apply initial highlight to card 0 */
+    /* Apply initial selection highlight */
     update_selection(0);
 }
 
@@ -316,6 +492,13 @@ static void build_ui()
 /* ------------------------------------------------------------------ */
 int main(int /*argc*/, char ** /*argv*/)
 {
+    load_config();
+
+    if (num_games == 0) {
+        fprintf(stderr, "No valid games found in config. Exiting.\n");
+        return 1;
+    }
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) < 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -350,7 +533,7 @@ int main(int /*argc*/, char ** /*argv*/)
     }
 
     SDL_GetWindowSize(sdl_window, &win_w, &win_h);
-    printf("Window size: %dx%d\n", win_w, win_h);
+    printf("Window: %dx%d | Games: %d\n", win_w, win_h, num_games);
 
     sdl_texture = SDL_CreateTexture(
         sdl_renderer,
@@ -359,9 +542,7 @@ int main(int /*argc*/, char ** /*argv*/)
         win_w, win_h
     );
 
-    /* Init gamepad after window so SDL has a context */
     init_gamepad();
-
     lv_init();
 
     lv_display_t *disp = lv_display_create(win_w, win_h);
@@ -395,7 +576,6 @@ int main(int /*argc*/, char ** /*argv*/)
                     running = false;
                     break;
 
-                /* Gamepad hotplug */
                 case SDL_CONTROLLERDEVICEADDED:
                     if (!sdl_gamepad) {
                         sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
@@ -405,38 +585,52 @@ int main(int /*argc*/, char ** /*argv*/)
                     break;
                 case SDL_CONTROLLERDEVICEREMOVED:
                     if (sdl_gamepad &&
-                        SDL_GameControllerFromInstanceID(ev.cdevice.which) == sdl_gamepad) {
+                        SDL_GameControllerFromInstanceID(ev.cdevice.which)
+                            == sdl_gamepad) {
                         SDL_GameControllerClose(sdl_gamepad);
                         sdl_gamepad = nullptr;
                         printf("Gamepad disconnected\n");
                     }
                     break;
 
-                /* Gamepad buttons */
                 case SDL_CONTROLLERBUTTONDOWN:
                     handle_gamepad_button(
-                        static_cast<SDL_GameControllerButton>(ev.cbutton.button),
-                        running);
+                        static_cast<SDL_GameControllerButton>(
+                            ev.cbutton.button));
                     break;
 
-                /* Touch */
                 case SDL_MOUSEBUTTONDOWN:
-                    touch_pressed = true;
-                    touch_x = ev.button.x; touch_y = ev.button.y; break;
+                    if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
+                        touch_pressed = true;
+                        touch_x = ev.button.x;
+                        touch_y = ev.button.y;
+                    }
+                    break;
                 case SDL_MOUSEBUTTONUP:
                     touch_pressed = false;
-                    touch_x = ev.button.x; touch_y = ev.button.y; break;
+                    touch_x = ev.button.x;
+                    touch_y = ev.button.y;
+                    break;
                 case SDL_MOUSEMOTION:
-                    touch_x = ev.motion.x; touch_y = ev.motion.y; break;
+                    touch_x = ev.motion.x;
+                    touch_y = ev.motion.y;
+                    break;
                 case SDL_FINGERDOWN:
-                    touch_pressed = true;
-                    touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
-                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h); break;
+                    if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
+                        touch_pressed = true;
+                        touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
+                        touch_y = static_cast<int32_t>(ev.tfinger.y * win_h);
+                    }
+                    break;
                 case SDL_FINGERUP:
-                    touch_pressed = false; break;
+                    touch_pressed = false;
+                    break;
                 case SDL_FINGERMOTION:
-                    touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
-                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h); break;
+                    if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
+                        touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
+                        touch_y = static_cast<int32_t>(ev.tfinger.y * win_h);
+                    }
+                    break;
 
                 default:
                     break;
