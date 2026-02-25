@@ -1,6 +1,7 @@
 #include "input.h"
 #include "launcher.h"
 #include "config.h"
+#include "ui.h"
 #include <cstdio>
 
 #define LV_CONF_INCLUDE_SIMPLE 1

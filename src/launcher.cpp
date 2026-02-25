@@ -88,7 +88,11 @@ void launch_game(const Game *game)
     if (game->capture_output) {
         char output[8192] = {0};
         FILE *f = fopen(OUTPUT_TMP, "r");
-        if (f) { fread(output, 1, sizeof(output) - 1, f); fclose(f); }
+        if (f) {
+            size_t bytes = fread(output, 1, sizeof(output) - 1, f);
+            output[bytes] = '\0';   /* ensure null termination */
+            fclose(f);
+        }
         show_results(game->name, output);
     } else {
         redraw_ui();

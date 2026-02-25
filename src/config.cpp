@@ -33,7 +33,9 @@ static void parse_args(Game *game, const char *args_str)
 
 static void write_default_config()
 {
-    system("mkdir -p /etc/phytec-launcher");
+    if (system("mkdir -p /etc/phytec-launcher") != 0) {
+        fprintf(stderr, "Could not create config directory\n");
+    }
     FILE *f = fopen(CONFIG_PATH, "w");
     if (!f) {
         fprintf(stderr, "Could not write default config to %s\n", CONFIG_PATH);
