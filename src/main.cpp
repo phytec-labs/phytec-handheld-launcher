@@ -12,16 +12,21 @@
 /*  Game definitions                                                    */
 /* ------------------------------------------------------------------ */
 struct Game {
-    const char *name;
-    const char *binary;
-    lv_color_t  card_color;
+    const char  *name;
+    const char  *binary;
+    lv_color_t   card_color;
+    const char  *args[8];   /* null-terminated list of extra args */
 };
 
 static const Game games[] = {
-    { "SuperTuxKart", "/usr/bin/supertuxkart", lv_color_hex(0x1565C0) },
-    { "Neverball",    "/usr/bin/neverball",    lv_color_hex(0x2E7D32) },
-    { "Neverputt",    "/usr/bin/neverputt",    lv_color_hex(0x00695C) },
-    { "RetroArch",    "/usr/bin/retroarch",    lv_color_hex(0x6A1B9A) },
+    { "SuperTuxKart", "/usr/bin/supertuxkart", lv_color_hex(0x1565C0),
+      { "--fullscreen", nullptr } },
+    { "Neverball",    "/usr/bin/neverball",    lv_color_hex(0x2E7D32),
+      { "-f", nullptr } },
+    { "Neverputt",    "/usr/bin/neverputt",    lv_color_hex(0x00695C),
+      { "-f", nullptr } },
+    { "RetroArch",    "/usr/bin/retroarch",    lv_color_hex(0x6A1B9A),
+      { "-f", nullptr } },
 };
 static const int NUM_GAMES = sizeof(games) / sizeof(games[0]);
 
@@ -41,7 +46,6 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     int w = area->x2 - area->x1 + 1;
     int h = area->y2 - area->y1 + 1;
-
     SDL_Rect rect = { area->x1, area->y1, w, h };
     SDL_UpdateTexture(sdl_texture, &rect,
                       reinterpret_cast<uint32_t *>(px_map),
@@ -72,12 +76,9 @@ static void read_cb(lv_indev_t * /*indev*/, lv_indev_data_t *data)
 static void launch_game(const Game *game)
 {
     printf("Launching: %s\n", game->binary);
-
-    /* Hide the SDL window while the game runs */
     SDL_HideWindow(sdl_window);
 
     pid_t pid = fork();
-
     if (pid < 0) {
         perror("fork failed");
         SDL_ShowWindow(sdl_window);
@@ -85,24 +86,26 @@ static void launch_game(const Game *game)
     }
 
     if (pid == 0) {
-        /* Child process — replace ourselves with the game */
-        execl(game->binary, game->binary, nullptr);
-        /* If execl returns, something went wrong */
-        perror("execl failed");
+        /* Build argv: binary + extra args + nullptr terminator */
+        const char *argv[16];
+        int argc = 0;
+        argv[argc++] = game->binary;
+        for (int i = 0; game->args[i] != nullptr && argc < 15; i++)
+            argv[argc++] = game->args[i];
+        argv[argc] = nullptr;
+
+        execv(game->binary, const_cast<char *const *>(argv));
+        perror("execv failed");
         _exit(1);
     }
 
-    /* Parent process — wait for the game to exit */
     int status;
     waitpid(pid, &status, 0);
-    printf("Game exited with status %d, returning to launcher\n",
+    printf("Game exited (status %d), returning to launcher\n",
            WEXITSTATUS(status));
 
-    /* Restore the launcher window */
     SDL_ShowWindow(sdl_window);
     SDL_RaiseWindow(sdl_window);
-
-    /* Force LVGL to redraw everything */
     lv_obj_invalidate(lv_screen_active());
 }
 
@@ -116,81 +119,77 @@ static void card_click_cb(lv_event_t *e)
 }
 
 /* ------------------------------------------------------------------ */
-/*  UI construction                                                     */
+/*  UI — 2x2 grid with centered labels                                 */
 /* ------------------------------------------------------------------ */
 static void build_ui()
 {
+    const int HEADER_H = 50;
+    const int PAD      = 24;   /* outer padding */
+    const int GAP      = 20;   /* gap between cards */
+    const int COLS     = 2;
+    const int ROWS     = 2;
+
+    const int CARD_W = (win_w - PAD * 2 - GAP * (COLS - 1)) / COLS;
+    const int CARD_H = (win_h - HEADER_H - PAD * 2 - GAP * (ROWS - 1)) / ROWS;
+
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(scr, 0, 0);
 
-    /* ---- Header bar ---- */
+    /* ---- Header ---- */
     lv_obj_t *header = lv_obj_create(scr);
-    lv_obj_set_size(header, win_w, 50);
+    lv_obj_set_size(header, win_w, HEADER_H);
     lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_bg_color(header, lv_color_hex(0x1a1a2e), 0);
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_style_radius(header, 0, 0);
-    lv_obj_set_style_pad_all(header, 10, 0);
+    lv_obj_set_style_pad_all(header, 0, 0);
+    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text(title, "PHYTEC Game Launcher");
     lv_obj_set_style_text_color(title, lv_color_hex(0xe0e0ff), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 5, 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
 
-    /* ---- Grid container ---- */
-    lv_obj_t *grid = lv_obj_create(scr);
-    lv_obj_set_size(grid, win_w, win_h - 50);
-    lv_obj_align(grid, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(grid, lv_color_hex(0x0f0f1a), 0);
-    lv_obj_set_style_bg_opa(grid, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(grid, 0, 0);
-    lv_obj_set_style_radius(grid, 0, 0);
-    lv_obj_set_style_pad_all(grid, 20, 0);
-    lv_obj_set_style_pad_gap(grid, 20, 0);
-
-    /* Use flex layout — wrap into rows automatically */
-    lv_obj_set_layout(grid, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_START,
-                                LV_FLEX_ALIGN_CENTER,
-                                LV_FLEX_ALIGN_START);
-
-    /* Card size — fits 4 per row on 800px, 2 per row on smaller */
-    const int CARD_W = (win_w - 60) / 4 - 5;   /* 4 columns */
-    const int CARD_H = (win_h - 50 - 60) / 2;  /* 2 rows */
-
+    /* ---- Cards ---- */
     for (int i = 0; i < NUM_GAMES; i++) {
-        /* ---- Card ---- */
-        lv_obj_t *card = lv_obj_create(grid);
+        int col = i % COLS;
+        int row = i / COLS;
+
+        int x = PAD + col * (CARD_W + GAP);
+        int y = HEADER_H + PAD + row * (CARD_H + GAP);
+
+        lv_obj_t *card = lv_obj_create(scr);
+        lv_obj_set_pos(card, x, y);
         lv_obj_set_size(card, CARD_W, CARD_H);
         lv_obj_set_style_bg_color(card, games[i].card_color, 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(card, 16, 0);
+        lv_obj_set_style_radius(card, 20, 0);
         lv_obj_set_style_border_width(card, 2, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(0xffffff), LV_STATE_PRESSED);
         lv_obj_set_style_border_color(card, lv_color_hex(0x3a3a5c), 0);
-        lv_obj_set_style_shadow_width(card, 10, 0);
+        lv_obj_set_style_shadow_width(card, 20, 0);
         lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_shadow_opa(card, LV_OPA_50, 0);
-        lv_obj_set_style_pad_all(card, 8, 0);
-
-        /* Pressed state — lighten slightly */
-        lv_obj_set_style_bg_opa(card, LV_OPA_80, LV_STATE_PRESSED);
+        lv_obj_set_style_shadow_opa(card, LV_OPA_40, 0);
+        lv_obj_set_style_bg_opa(card, LV_OPA_70, LV_STATE_PRESSED);
+        lv_obj_set_style_pad_all(card, 12, 0);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(card, card_click_cb, LV_EVENT_CLICKED,
                             const_cast<Game *>(&games[i]));
 
-        /* ---- Game name label ---- */
+        /* Centered game name */
         lv_obj_t *name_label = lv_label_create(card);
         lv_label_set_text(name_label, games[i].name);
         lv_label_set_long_mode(name_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(name_label, CARD_W - 16);
+        lv_obj_set_width(name_label, CARD_W - 24);
         lv_obj_set_style_text_color(name_label, lv_color_white(), 0);
         lv_obj_set_style_text_font(name_label, &lv_font_montserrat_14, 0);
-        lv_obj_align(name_label, LV_ALIGN_BOTTOM_MID, 0, -4);
+        lv_obj_set_style_text_align(name_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(name_label, LV_ALIGN_CENTER, 0, 0);
     }
 }
 
@@ -205,7 +204,6 @@ int main(int /*argc*/, char ** /*argv*/)
     }
 
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -272,37 +270,25 @@ int main(int /*argc*/, char ** /*argv*/)
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             switch (ev.type) {
-                case SDL_QUIT:
-                    running = false;
-                    break;
+                case SDL_QUIT:   running = false; break;
                 case SDL_MOUSEBUTTONDOWN:
                     touch_pressed = true;
-                    touch_x = ev.button.x;
-                    touch_y = ev.button.y;
-                    break;
+                    touch_x = ev.button.x; touch_y = ev.button.y; break;
                 case SDL_MOUSEBUTTONUP:
                     touch_pressed = false;
-                    touch_x = ev.button.x;
-                    touch_y = ev.button.y;
-                    break;
+                    touch_x = ev.button.x; touch_y = ev.button.y; break;
                 case SDL_MOUSEMOTION:
-                    touch_x = ev.motion.x;
-                    touch_y = ev.motion.y;
-                    break;
+                    touch_x = ev.motion.x; touch_y = ev.motion.y; break;
                 case SDL_FINGERDOWN:
                     touch_pressed = true;
                     touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
-                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h);
-                    break;
+                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h); break;
                 case SDL_FINGERUP:
-                    touch_pressed = false;
-                    break;
+                    touch_pressed = false; break;
                 case SDL_FINGERMOTION:
                     touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
-                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h);
-                    break;
-                default:
-                    break;
+                    touch_y = static_cast<int32_t>(ev.tfinger.y * win_h); break;
+                default: break;
             }
         }
 
