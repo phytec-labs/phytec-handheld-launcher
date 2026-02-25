@@ -33,6 +33,12 @@ static const int COLS      = 2;
 static const int ROWS      = 2;
 
 /* ------------------------------------------------------------------ */
+/*  Forward declarations                                                */
+/* ------------------------------------------------------------------ */
+static void launch_game(const Game *game);
+static void update_selection(int new_index);
+
+/* ------------------------------------------------------------------ */
 /*  Display & renderer globals                                          */
 /* ------------------------------------------------------------------ */
 static SDL_Window        *sdl_window    = nullptr;
