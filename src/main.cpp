@@ -33,12 +33,6 @@ static const int COLS      = 2;
 static const int ROWS      = 2;
 
 /* ------------------------------------------------------------------ */
-/*  Forward declarations                                                */
-/* ------------------------------------------------------------------ */
-static void launch_game(const Game *game);
-static void update_selection(int new_index);
-
-/* ------------------------------------------------------------------ */
 /*  Display & renderer globals                                          */
 /* ------------------------------------------------------------------ */
 static SDL_Window        *sdl_window    = nullptr;
@@ -47,6 +41,12 @@ static SDL_Texture       *sdl_texture   = nullptr;
 static SDL_GameController *sdl_gamepad  = nullptr;
 static int                win_w         = 800;
 static int                win_h         = 480;
+
+/* ------------------------------------------------------------------ */
+/*  Forward declarations                                                */
+/* ------------------------------------------------------------------ */
+static void launch_game(const Game *game);
+static void update_selection(int new_index);
 
 /* ------------------------------------------------------------------ */
 /*  Navigation state                                                    */
@@ -206,6 +206,14 @@ static void launch_game(const Game *game)
     waitpid(pid, &status, 0);
     printf("Game exited (status %d), returning to launcher\n",
            WEXITSTATUS(status));
+
+    /* Flush any button events that accumulated while the game was running.
+     * Without this, the quit button press from the game gets processed
+     * by the launcher immediately on resume and re-launches the game. */
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+
+    /* Small delay to let the compositor settle before we reappear */
+    SDL_Delay(300);
 
     SDL_ShowWindow(sdl_window);
     SDL_RaiseWindow(sdl_window);
