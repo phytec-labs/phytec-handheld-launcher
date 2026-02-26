@@ -44,7 +44,11 @@ static void write_default_config()
     fprintf(f,
         "# PHYTEC Game Launcher Configuration\n"
         "# Each [game] block defines one application entry.\n"
-        "# args= is optional. Use space-separated arguments.\n"
+        "# args=          optional, space-separated arguments\n"
+        "# killable=true  enables kill button during wait loop\n"
+        "# kill_button=N  joystick button number to kill the process\n"
+        "#                run launcher and check journal to find N\n"
+        "# capture_output=true  saves stdout/stderr and shows results screen\n"
         "\n"
         "[game]\n"
         "name=SuperTuxKart\n"
@@ -65,6 +69,13 @@ static void write_default_config()
         "name=RetroArch\n"
         "binary=/usr/bin/retroarch\n"
         "args=-f\n"
+        "\n"
+        "[game]\n"
+        "name=glmark2 ES2\n"
+        "binary=/usr/bin/glmark2-es2-wayland\n"
+        "killable=true\n"
+        "kill_button=-1\n"
+        "capture_output=true\n"
     );
     fclose(f);
     printf("Default config written to %s\n", CONFIG_PATH);
@@ -95,6 +106,7 @@ void load_config()
             if (num_games < MAX_GAMES) {
                 current = &games[num_games];
                 memset(current, 0, sizeof(Game));
+		current->kill_button = -1;
                 num_games++;
                 in_game = true;
             } else {
@@ -118,6 +130,7 @@ void load_config()
         else if (strcmp(key, "binary")         == 0) strncpy(current->binary, val, MAX_STR - 1);
         else if (strcmp(key, "args")           == 0) parse_args(current, val);
         else if (strcmp(key, "killable")       == 0) current->killable       = (strcmp(val, "true") == 0);
+        else if (strcmp(key, "kill_button")    == 0) current->kill_button    = atoi(val);
         else if (strcmp(key, "capture_output") == 0) current->capture_output = (strcmp(val, "true") == 0);
     }
     fclose(f);

@@ -49,14 +49,18 @@ void launch_game(const Game *game)
 
     if (capture_fd >= 0) close(capture_fd);
 
-    bool child_running = true;
+    /* Flush the button/touch event that launched this game so it
+     * doesn't appear as a spurious kill event in the wait loop */
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    SDL_Delay(200);
 
-    /* Ensure controller events flow even with hidden window */
     SDL_JoystickEventState(SDL_ENABLE);
     SDL_GameControllerEventState(SDL_ENABLE);
 
-    printf("Entering wait loop for pid %d (killable=%d)\n", pid, game->killable);
+    printf("Entering wait loop for pid %d (killable=%d, kill_button=%d)\n",
+           pid, game->killable, game->kill_button);
 
+    bool child_running = true;
     while (child_running) {
         int   status;
         pid_t result = waitpid(pid, &status, WNOHANG);
@@ -68,49 +72,43 @@ void launch_game(const Game *game)
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            /* Log every event type so we can see what's arriving */
             if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                printf("Controller button DOWN: %d (START=%d, killable=%d)\n",
-                       ev.cbutton.button,
-                       SDL_CONTROLLER_BUTTON_START,
-                       game->killable);
+                printf("Controller button DOWN: %d\n", ev.cbutton.button);
             } else if (ev.type == SDL_JOYBUTTONDOWN) {
-                /* Fallback — some controllers only send joystick events */
                 printf("Joystick button DOWN: %d\n", ev.jbutton.button);
-            } else {
-                printf("SDL event type: 0x%x\n", ev.type);
             }
 
+            /* Controller path */
             if (ev.type == SDL_CONTROLLERBUTTONDOWN && game->killable) {
                 auto btn = static_cast<SDL_GameControllerButton>(ev.cbutton.button);
                 if (btn == SDL_CONTROLLER_BUTTON_START) {
-                    printf("START pressed — sending SIGTERM to %d\n", pid);
-                    kill(pid, SIGTERM);
-                    SDL_Delay(2000);
-                    if (waitpid(pid, &status, WNOHANG) != pid) {
-                        printf("Process did not exit gracefully, sending SIGKILL\n");
-                        kill(pid, SIGKILL);
-                        waitpid(pid, &status, 0);
-                    }
-                    child_running = false;
+                    printf("Controller START — killing pid %d\n", pid);
+                    goto do_kill;
                 }
             }
 
-            /* Joystick fallback in case controller mapping isn't working */
+            /* Joystick path — used when SDL maps buttons as joystick only */
             if (ev.type == SDL_JOYBUTTONDOWN && game->killable) {
-                printf("Trying joystick kill on button %d\n", ev.jbutton.button);
-                /* Button 7 is typically START on Xbox controllers */
-                if (ev.jbutton.button == 7) {
-                    printf("Joystick START — sending SIGTERM to %d\n", pid);
-                    kill(pid, SIGTERM);
-                    SDL_Delay(2000);
-                    if (waitpid(pid, &status, WNOHANG) != pid) {
-                        kill(pid, SIGKILL);
-                        waitpid(pid, &status, 0);
-                    }
-                    child_running = false;
+                printf("Joystick button %d pressed (kill_button=%d)\n",
+                       ev.jbutton.button, game->kill_button);
+                if (game->kill_button >= 0 &&
+                    ev.jbutton.button == (Uint8)game->kill_button) {
+                    printf("Kill button matched — killing pid %d\n", pid);
+                    goto do_kill;
                 }
             }
+            continue;
+
+            do_kill:
+            kill(pid, SIGTERM);
+            SDL_Delay(2000);
+            if (waitpid(pid, &status, WNOHANG) != pid) {
+                printf("No graceful exit, sending SIGKILL\n");
+                kill(pid, SIGKILL);
+                waitpid(pid, &status, 0);
+            }
+            child_running = false;
+            break;
         }
 
         if (child_running) SDL_Delay(100);
@@ -129,7 +127,7 @@ void launch_game(const Game *game)
         FILE *f = fopen(OUTPUT_TMP, "r");
         if (f) {
             size_t bytes = fread(output, 1, sizeof(output) - 1, f);
-            output[bytes] = '\0';   /* ensure null termination */
+            output[bytes] = '\0';
             fclose(f);
         }
         show_results(game->name, output);

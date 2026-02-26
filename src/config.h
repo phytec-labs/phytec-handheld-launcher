@@ -11,6 +11,7 @@ struct Game {
     char args[MAX_ARGS][MAX_STR];
     int  num_args;
     bool killable;
+    int  kill_button;     /* joystick button number to kill the process, -1 = unset */
     bool capture_output;
 };
 
