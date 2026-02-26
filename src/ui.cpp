@@ -201,9 +201,7 @@ void build_ui()
 
             lv_obj_t *img = lv_image_create(card);
             lv_image_set_src(img, lvgl_path);
-            lv_image_set_size_mode(img, LV_IMAGE_SIZE_MODE_REAL);
-            lv_obj_set_size(img, CARD_W, CARD_H);
-            lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+            lv_obj_center(img);
 
             /* Semi-transparent name strip */
             lv_obj_t *name_bg = lv_obj_create(card);
