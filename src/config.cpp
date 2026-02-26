@@ -49,11 +49,14 @@ static void write_default_config()
         "# kill_button=N  joystick button number to kill the process\n"
         "#                run launcher and check journal to find N\n"
         "# capture_output=true  saves stdout/stderr and shows results screen\n"
+        "# icon=          optional, absolute path to a PNG cover image\n"
+        "#                images should be pre-scaled to match card dimensions\n"
         "\n"
         "[game]\n"
         "name=SuperTuxKart\n"
         "binary=/usr/bin/supertuxkart\n"
         "args=--fullscreen\n"
+        "icon=/usr/share/phytec-launcher/covers/supertuxkart.png\n"
         "\n"
         "[game]\n"
         "name=Neverball\n"
@@ -132,6 +135,7 @@ void load_config()
         else if (strcmp(key, "killable")       == 0) current->killable       = (strcmp(val, "true") == 0);
         else if (strcmp(key, "kill_button")    == 0) current->kill_button    = atoi(val);
         else if (strcmp(key, "capture_output") == 0) current->capture_output = (strcmp(val, "true") == 0);
+        else if (strcmp(key, "icon")           == 0) strncpy(current->icon,   val, MAX_STR - 1);
     }
     fclose(f);
     printf("Loaded %d game(s) from config\n", num_games);

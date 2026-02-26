@@ -13,6 +13,7 @@ struct Game {
     bool killable;
     int  kill_button;     /* joystick button number to kill the process, -1 = unset */
     bool capture_output;
+    char icon[MAX_STR];   /* absolute path to PNG cover art; empty = text fallback */
 };
 
 extern Game games[MAX_GAMES];

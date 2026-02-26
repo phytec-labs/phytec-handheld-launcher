@@ -3,6 +3,8 @@
 #include "launcher.h"
 #include "input.h"
 #include <cstdio>
+#include <cstring>
+#include <unistd.h>
 #include <SDL2/SDL.h>
 
 extern int win_w;
@@ -187,14 +189,52 @@ void build_ui()
         lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT), LV_STATE_PRESSED);
         lv_obj_add_event_cb(card, card_click_cb, LV_EVENT_CLICKED, &games[i]);
 
-        lv_obj_t *name_lbl = lv_label_create(card);
-        lv_label_set_text(name_lbl, games[i].name);
-        lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(name_lbl, CARD_W - 24);
-        lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
+        bool has_cover = (games[i].icon[0] != '\0' && access(games[i].icon, R_OK) == 0);
+
+        if (has_cover) {
+            /* Full-bleed cover art with a name strip at the bottom */
+            lv_obj_set_style_pad_all(card, 0, 0);
+            lv_obj_set_style_clip_corner(card, true, 0);
+
+            char lvgl_path[MAX_STR + 2];
+            snprintf(lvgl_path, sizeof(lvgl_path), "A:%s", games[i].icon);
+
+            lv_obj_t *img = lv_image_create(card);
+            lv_image_set_src(img, lvgl_path);
+            lv_image_set_size_mode(img, LV_IMAGE_SIZE_MODE_REAL);
+            lv_obj_set_size(img, CARD_W, CARD_H);
+            lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+
+            /* Semi-transparent name strip */
+            lv_obj_t *name_bg = lv_obj_create(card);
+            lv_obj_set_size(name_bg, CARD_W, 28);
+            lv_obj_align(name_bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+            lv_obj_set_style_bg_color(name_bg, lv_color_hex(0x000000), 0);
+            lv_obj_set_style_bg_opa(name_bg, LV_OPA_70, 0);
+            lv_obj_set_style_border_width(name_bg, 0, 0);
+            lv_obj_set_style_radius(name_bg, 0, 0);
+            lv_obj_set_style_pad_all(name_bg, 4, 0);
+            lv_obj_clear_flag(name_bg, LV_OBJ_FLAG_SCROLLABLE);
+
+            lv_obj_t *name_lbl = lv_label_create(name_bg);
+            lv_label_set_text(name_lbl, games[i].name);
+            lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(name_lbl, CARD_W - 8);
+            lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
+            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
+        } else {
+            /* Text-only fallback */
+            lv_obj_t *name_lbl = lv_label_create(card);
+            lv_label_set_text(name_lbl, games[i].name);
+            lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_WRAP);
+            lv_obj_set_width(name_lbl, CARD_W - 24);
+            lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
+            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
+        }
     }
 
     update_selection(0);
