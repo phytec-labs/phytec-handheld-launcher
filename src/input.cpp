@@ -19,6 +19,10 @@ extern int win_h;
 
 #define COLS 3
 #define ROWS 2
+#define AXIS_DEADZONE    16000   /* 0-32767 range, ~50% threshold */
+#define AXIS_REPEAT_MS     250   /* minimum ms between axis nav events */
+
+static Uint32 last_axis_move = 0;
 
 void init_gamepad()
 {
@@ -38,6 +42,13 @@ void init_gamepad()
 
 void handle_gamepad_button(SDL_GameControllerButton btn)
 {
+    /* If results screen is active, A closes it and nothing else works */
+    if (results_active) {
+        if (btn == SDL_CONTROLLER_BUTTON_A)
+            close_results();
+        return;
+    }
+
     int col = selected_index % COLS;
     int row = selected_index / COLS;
 
@@ -63,6 +74,56 @@ void handle_gamepad_button(SDL_GameControllerButton btn)
             break;
         default:
             break;
+    }
+}
+
+void handle_gamepad_axis(SDL_ControllerAxisEvent *axis)
+{
+    /* Only care about left stick X and Y */
+    if (axis->axis != SDL_CONTROLLER_AXIS_LEFTX &&
+        axis->axis != SDL_CONTROLLER_AXIS_LEFTY)
+        return;
+
+    /* Enforce repeat delay so one flick = one move */
+    Uint32 now = SDL_GetTicks();
+    if (now - last_axis_move < AXIS_REPEAT_MS) return;
+
+    /* If results screen is active, ignore joystick nav */
+    if (results_active) return;
+
+    int col = selected_index % COLS;
+    int row = selected_index / COLS;
+
+    if (axis->axis == SDL_CONTROLLER_AXIS_LEFTX) {
+        if (axis->value > AXIS_DEADZONE) {
+            /* Right */
+            if (col + 1 < COLS && selected_index + 1 < num_games) {
+                update_selection(selected_index + 1);
+                last_axis_move = now;
+            }
+        } else if (axis->value < -AXIS_DEADZONE) {
+            /* Left */
+            if (col - 1 >= 0) {
+                update_selection(selected_index - 1);
+                last_axis_move = now;
+            }
+        }
+    }
+
+    if (axis->axis == SDL_CONTROLLER_AXIS_LEFTY) {
+        if (axis->value > AXIS_DEADZONE) {
+            /* Down */
+            if (selected_index + COLS < num_games) {
+                update_selection(selected_index + COLS);
+                last_axis_move = now;
+            }
+        } else if (axis->value < -AXIS_DEADZONE) {
+            /* Up */
+            if (selected_index - COLS >= 0) {
+                update_selection(selected_index - COLS);
+                last_axis_move = now;
+            }
+        }
     }
 }
 

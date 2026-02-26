@@ -7,6 +7,7 @@
 void init_gamepad();
 void handle_gamepad_button(SDL_GameControllerButton btn);
 void read_cb(lv_indev_t *indev, lv_indev_data_t *data);
+void handle_gamepad_axis(SDL_ControllerAxisEvent *axis);
 
 extern SDL_GameController *sdl_gamepad;
 extern int32_t touch_x;
