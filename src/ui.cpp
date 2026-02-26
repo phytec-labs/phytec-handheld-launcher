@@ -10,24 +10,37 @@ extern int win_h;
 
 int       selected_index = 0;
 lv_obj_t *cards[MAX_GAMES];
+bool      results_active = false;
+static lv_obj_t *results_overlay = nullptr;
 
 void redraw_ui()
 {
     lv_obj_invalidate(lv_screen_active());
 }
 
+void close_results()
+{
+    if (results_overlay) {
+        lv_obj_delete(results_overlay);
+        results_overlay = nullptr;
+    }
+    results_active = false;
+    lv_obj_invalidate(lv_screen_active());
+}
+
 static void close_results_cb(lv_event_t *e)
 {
-    lv_obj_t *overlay = static_cast<lv_obj_t *>(lv_event_get_user_data(e));
-    lv_obj_delete(overlay);
-    lv_obj_invalidate(lv_screen_active());
+    close_results();
 }
 
 void show_results(const char *app_name, const char *output)
 {
-    lv_obj_t *scr = lv_screen_active();
+    results_active  = true;
+    lv_obj_t *scr   = lv_screen_active();
 
-    lv_obj_t *overlay = lv_obj_create(scr);
+    results_overlay = lv_obj_create(scr);
+    lv_obj_t *overlay = results_overlay;
+
     lv_obj_set_size(overlay, win_w, win_h);
     lv_obj_set_pos(overlay, 0, 0);
     lv_obj_set_style_bg_color(overlay, lv_color_hex(COL_BG), 0);
@@ -45,6 +58,12 @@ void show_results(const char *app_name, const char *output)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
+    lv_obj_t *hint = lv_label_create(overlay);
+    lv_label_set_text(hint, "A: Close");
+    lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 0);
+
     lv_obj_t *ta = lv_textarea_create(overlay);
     lv_obj_set_size(ta, win_w - PAD * 2, win_h - HEADER_H - PAD * 3 - 50);
     lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 30);
@@ -58,12 +77,18 @@ void show_results(const char *app_name, const char *output)
     lv_textarea_set_cursor_click_pos(ta, false);
     lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
 
+    /* Close button — highlighted to show it has focus */
     lv_obj_t *btn = lv_button_create(overlay);
     lv_obj_set_size(btn, 160, 44);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
-    lv_obj_add_event_cb(btn, close_results_cb, LV_EVENT_CLICKED, overlay);
+    lv_obj_set_style_border_width(btn, 3, 0);
+    lv_obj_set_style_border_color(btn, lv_color_white(), 0);
+    lv_obj_set_style_shadow_width(btn, 20, 0);
+    lv_obj_set_style_shadow_color(btn, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_shadow_opa(btn, LV_OPA_50, 0);
+    lv_obj_add_event_cb(btn, close_results_cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "Back to Launcher");
@@ -71,7 +96,6 @@ void show_results(const char *app_name, const char *output)
     lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_14, 0);
     lv_obj_center(btn_lbl);
 
-    /* Run LVGL so screen redraws before user sees it */
     lv_timer_handler();
 }
 

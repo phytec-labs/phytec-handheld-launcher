@@ -21,8 +21,10 @@
 #define COL_PRESSED     0x0d419d
 
 extern int selected_index;
+extern bool results_active;
 
 void build_ui();
 void update_selection(int new_index);
 void show_results(const char *app_name, const char *output);
 void redraw_ui();
+void close_results();

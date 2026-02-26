@@ -50,20 +50,58 @@ void launch_game(const Game *game)
     if (capture_fd >= 0) close(capture_fd);
 
     bool child_running = true;
+
+    /* Ensure controller events flow even with hidden window */
+    SDL_JoystickEventState(SDL_ENABLE);
+    SDL_GameControllerEventState(SDL_ENABLE);
+
+    printf("Entering wait loop for pid %d (killable=%d)\n", pid, game->killable);
+
     while (child_running) {
         int   status;
         pid_t result = waitpid(pid, &status, WNOHANG);
         if (result == pid) {
             child_running = false;
-            printf("Game exited (status %d)\n", WEXITSTATUS(status));
+            printf("Game exited naturally (status %d)\n", WEXITSTATUS(status));
+            break;
         }
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
+            /* Log every event type so we can see what's arriving */
+            if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
+                printf("Controller button DOWN: %d (START=%d, killable=%d)\n",
+                       ev.cbutton.button,
+                       SDL_CONTROLLER_BUTTON_START,
+                       game->killable);
+            } else if (ev.type == SDL_JOYBUTTONDOWN) {
+                /* Fallback — some controllers only send joystick events */
+                printf("Joystick button DOWN: %d\n", ev.jbutton.button);
+            } else {
+                printf("SDL event type: 0x%x\n", ev.type);
+            }
+
             if (ev.type == SDL_CONTROLLERBUTTONDOWN && game->killable) {
                 auto btn = static_cast<SDL_GameControllerButton>(ev.cbutton.button);
                 if (btn == SDL_CONTROLLER_BUTTON_START) {
-                    printf("Killing pid %d\n", pid);
+                    printf("START pressed — sending SIGTERM to %d\n", pid);
+                    kill(pid, SIGTERM);
+                    SDL_Delay(2000);
+                    if (waitpid(pid, &status, WNOHANG) != pid) {
+                        printf("Process did not exit gracefully, sending SIGKILL\n");
+                        kill(pid, SIGKILL);
+                        waitpid(pid, &status, 0);
+                    }
+                    child_running = false;
+                }
+            }
+
+            /* Joystick fallback in case controller mapping isn't working */
+            if (ev.type == SDL_JOYBUTTONDOWN && game->killable) {
+                printf("Trying joystick kill on button %d\n", ev.jbutton.button);
+                /* Button 7 is typically START on Xbox controllers */
+                if (ev.jbutton.button == 7) {
+                    printf("Joystick START — sending SIGTERM to %d\n", pid);
                     kill(pid, SIGTERM);
                     SDL_Delay(2000);
                     if (waitpid(pid, &status, WNOHANG) != pid) {
@@ -74,6 +112,7 @@ void launch_game(const Game *game)
                 }
             }
         }
+
         if (child_running) SDL_Delay(100);
     }
 

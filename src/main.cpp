@@ -132,6 +132,9 @@ int main(int /*argc*/, char ** /*argv*/)
                     handle_gamepad_button(
                         static_cast<SDL_GameControllerButton>(ev.cbutton.button));
                     break;
+                case SDL_CONTROLLERAXISMOTION:
+                    handle_gamepad_axis(&ev.caxis);
+                    break;
                 case SDL_MOUSEBUTTONDOWN:
                     if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
                         touch_pressed = true;
