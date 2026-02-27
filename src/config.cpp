@@ -5,7 +5,8 @@
 #include <unistd.h>
 
 Game games[MAX_GAMES];
-int  num_games = 0;
+int  num_games    = 0;
+int  home_button  = -1;
 
 static void trim(char *s)
 {
@@ -43,11 +44,18 @@ static void write_default_config()
     }
     fprintf(f,
         "# PHYTEC Game Launcher Configuration\n"
-        "# Each [game] block defines one application entry.\n"
+        "\n"
+        "# [launcher] section — global settings\n"
+        "# home_button=N  raw joystick button index that kills any running app\n"
+        "#                and returns to the launcher.  Run the launcher and\n"
+        "#                press buttons to see their indices in the journal.\n"
+        "#                -1 = disabled\n"
+        "\n"
+        "[launcher]\n"
+        "home_button=-1\n"
+        "\n"
+        "# [game] sections — one per application entry\n"
         "# args=          optional, space-separated arguments\n"
-        "# killable=true  enables kill button during wait loop\n"
-        "# kill_button=N  joystick button number to kill the process\n"
-        "#                run launcher and check journal to find N\n"
         "# capture_output=true  saves stdout/stderr and shows results screen\n"
         "# icon=          optional, absolute path to a PNG cover image\n"
         "#                images should be pre-scaled to match card dimensions\n"
@@ -98,18 +106,26 @@ void load_config()
     }
 
     char  line[MAX_STR];
-    Game *current = nullptr;
-    bool  in_game = false;
+    Game *current     = nullptr;
+    bool  in_game     = false;
+    bool  in_launcher = false;
 
     while (fgets(line, sizeof(line), f)) {
         trim(line);
         if (line[0] == '\0' || line[0] == '#') continue;
 
+        if (strcmp(line, "[launcher]") == 0) {
+            in_launcher = true;
+            in_game     = false;
+            continue;
+        }
+
         if (strcmp(line, "[game]") == 0) {
+            in_launcher = false;
             if (num_games < MAX_GAMES) {
                 current = &games[num_games];
                 memset(current, 0, sizeof(Game));
-		current->kill_button = -1;
+                current->kill_button = -1;
                 num_games++;
                 in_game = true;
             } else {
@@ -119,8 +135,6 @@ void load_config()
             continue;
         }
 
-        if (!in_game || !current) continue;
-
         char *eq = strchr(line, '=');
         if (!eq) continue;
         *eq = '\0';
@@ -129,16 +143,20 @@ void load_config()
         trim(key);
         trim(val);
 
-        if      (strcmp(key, "name")           == 0) strncpy(current->name,   val, MAX_STR - 1);
-        else if (strcmp(key, "binary")         == 0) strncpy(current->binary, val, MAX_STR - 1);
-        else if (strcmp(key, "args")           == 0) parse_args(current, val);
-        else if (strcmp(key, "killable")       == 0) current->killable       = (strcmp(val, "true") == 0);
-        else if (strcmp(key, "kill_button")    == 0) current->kill_button    = atoi(val);
-        else if (strcmp(key, "capture_output") == 0) current->capture_output = (strcmp(val, "true") == 0);
-        else if (strcmp(key, "icon")           == 0) strncpy(current->icon,   val, MAX_STR - 1);
+        if (in_launcher) {
+            if (strcmp(key, "home_button") == 0) home_button = atoi(val);
+        } else if (in_game && current) {
+            if      (strcmp(key, "name")           == 0) strncpy(current->name,   val, MAX_STR - 1);
+            else if (strcmp(key, "binary")         == 0) strncpy(current->binary, val, MAX_STR - 1);
+            else if (strcmp(key, "args")           == 0) parse_args(current, val);
+            else if (strcmp(key, "killable")       == 0) current->killable       = (strcmp(val, "true") == 0);
+            else if (strcmp(key, "kill_button")    == 0) current->kill_button    = atoi(val);
+            else if (strcmp(key, "capture_output") == 0) current->capture_output = (strcmp(val, "true") == 0);
+            else if (strcmp(key, "icon")           == 0) strncpy(current->icon,   val, MAX_STR - 1);
+        }
     }
     fclose(f);
-    printf("Loaded %d game(s) from config\n", num_games);
+    printf("Loaded %d game(s) from config (home_button=%d)\n", num_games, home_button);
 
     for (int i = 0; i < num_games; ) {
         if (games[i].binary[0] == '\0' || access(games[i].binary, X_OK) != 0) {

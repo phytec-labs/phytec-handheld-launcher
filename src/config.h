@@ -18,5 +18,6 @@ struct Game {
 
 extern Game games[MAX_GAMES];
 extern int  num_games;
+extern int  home_button;  /* raw joystick button index that always kills the child, -1 = disabled */
 
 void load_config();

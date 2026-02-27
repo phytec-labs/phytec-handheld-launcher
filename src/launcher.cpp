@@ -29,10 +29,20 @@ void launch_game(const Game *game)
         if (capture_fd < 0) perror("Could not open capture file");
     }
 
+    /* Close the gamepad BEFORE fork so the child does not inherit the
+     * joystick device file descriptors.  If the child (or its SDL init)
+     * grabs exclusive access to the device, the parent would never see
+     * button events again.  We reopen after fork. */
+    if (sdl_gamepad) {
+        SDL_GameControllerClose(sdl_gamepad);
+        sdl_gamepad = nullptr;
+    }
+
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork failed");
         if (capture_fd >= 0) close(capture_fd);
+        init_gamepad();
         SDL_ShowWindow(sdl_window);
         return;
     }
@@ -61,8 +71,23 @@ void launch_game(const Game *game)
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     SDL_Delay(200);
 
-    SDL_JoystickEventState(SDL_ENABLE);
-    SDL_GameControllerEventState(SDL_ENABLE);
+    /* Reopen the gamepad with a fresh FD that the child cannot see.
+     * Also try opening any raw joystick that is not a mapped game
+     * controller so the home_button index can still be detected. */
+    init_gamepad();
+    SDL_Joystick *wait_joy = nullptr;
+    if (!sdl_gamepad) {
+        int n = SDL_NumJoysticks();
+        for (int i = 0; i < n; i++) {
+            if (!SDL_IsGameController(i)) {
+                wait_joy = SDL_JoystickOpen(i);
+                if (wait_joy) {
+                    printf("Opened raw joystick %d for home button\n", i);
+                    break;
+                }
+            }
+        }
+    }
 
     /* Free GPU-accessible texture memory so the child process has full access
      * to shared CPU/GPU memory (critical for GPU benchmarks and games).
@@ -78,8 +103,8 @@ void launch_game(const Game *game)
         }
     }
 
-    printf("Entering wait loop for pid %d (killable=%d, kill_button=%d)\n",
-           pid, game->killable, game->kill_button);
+    printf("Entering wait loop for pid %d (home_button=%d)\n",
+           pid, home_button);
 
     bool child_running = true;
     while (child_running) {
@@ -91,36 +116,44 @@ void launch_game(const Game *game)
             break;
         }
 
+        bool do_kill = false;
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                printf("Controller button DOWN: %d\n", ev.cbutton.button);
-            } else if (ev.type == SDL_JOYBUTTONDOWN) {
-                printf("Joystick button DOWN: %d\n", ev.jbutton.button);
+            switch (ev.type) {
+                case SDL_CONTROLLERDEVICEADDED:
+                    if (!sdl_gamepad) {
+                        sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
+                        if (sdl_gamepad)
+                            printf("Gamepad reconnected: %s\n",
+                                   SDL_GameControllerName(sdl_gamepad));
+                    }
+                    break;
+                case SDL_CONTROLLERDEVICEREMOVED:
+                    if (sdl_gamepad &&
+                        SDL_GameControllerFromInstanceID(ev.cdevice.which) == sdl_gamepad) {
+                        SDL_GameControllerClose(sdl_gamepad);
+                        sdl_gamepad = nullptr;
+                        printf("Gamepad disconnected during child\n");
+                    }
+                    break;
+                case SDL_CONTROLLERBUTTONDOWN:
+                    printf("Controller button %d\n", ev.cbutton.button);
+                    break;
+                case SDL_JOYBUTTONDOWN:
+                    printf("Joystick button %d (home_button=%d)\n",
+                           ev.jbutton.button, home_button);
+                    if (home_button >= 0 &&
+                        ev.jbutton.button == (Uint8)home_button)
+                        do_kill = true;
+                    break;
+                default:
+                    break;
             }
+            if (do_kill) break;
+        }
 
-            /* Controller path */
-            if (ev.type == SDL_CONTROLLERBUTTONDOWN && game->killable) {
-                auto btn = static_cast<SDL_GameControllerButton>(ev.cbutton.button);
-                if (btn == SDL_CONTROLLER_BUTTON_START) {
-                    printf("Controller START — killing pid %d\n", pid);
-                    goto do_kill;
-                }
-            }
-
-            /* Joystick path — used when SDL maps buttons as joystick only */
-            if (ev.type == SDL_JOYBUTTONDOWN && game->killable) {
-                printf("Joystick button %d pressed (kill_button=%d)\n",
-                       ev.jbutton.button, game->kill_button);
-                if (game->kill_button >= 0 &&
-                    ev.jbutton.button == (Uint8)game->kill_button) {
-                    printf("Kill button matched — killing pid %d\n", pid);
-                    goto do_kill;
-                }
-            }
-            continue;
-
-            do_kill:
+        if (do_kill) {
+            printf("Home button pressed — killing pid %d\n", pid);
             kill(pid, SIGTERM);
             SDL_Delay(2000);
             if (waitpid(pid, &status, WNOHANG) != pid) {
@@ -129,10 +162,14 @@ void launch_game(const Game *game)
                 waitpid(pid, &status, 0);
             }
             child_running = false;
-            break;
         }
 
         if (child_running) SDL_Delay(100);
+    }
+
+    if (wait_joy) {
+        SDL_JoystickClose(wait_joy);
+        wait_joy = nullptr;
     }
 
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
