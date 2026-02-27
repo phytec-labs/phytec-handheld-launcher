@@ -8,7 +8,7 @@
 #define ROWS      2
 #define HEADER_H  54
 #define PAD       20
-#define GAP       16
+#define GAP       24
 
 /* Color palette */
 #define COL_BG          0x0d1117

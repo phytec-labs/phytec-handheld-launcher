@@ -123,6 +123,9 @@ void update_selection(int new_index)
     lv_obj_set_style_shadow_opa(cards[selected_index], LV_OPA_30, 0);
     lv_obj_set_style_bg_color(cards[selected_index],
                               lv_color_hex(0x1a2744), 0);
+
+    /* Scroll the screen so the selected card is visible (for rows beyond the viewport) */
+    lv_obj_scroll_to_view(cards[selected_index], LV_ANIM_ON);
 }
 
 static void card_click_cb(lv_event_t *e)
@@ -136,6 +139,7 @@ void build_ui()
 {
     const int CARD_W = (win_w - PAD * 2 - GAP * (COLS - 1)) / COLS;
     const int CARD_H = (win_h - HEADER_H - PAD * 2 - GAP * (ROWS - 1)) / ROWS;
+    printf("Card size: %dx%d — pre-scale cover art to this resolution\n", CARD_W, CARD_H);
 
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
@@ -155,7 +159,7 @@ void build_ui()
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(header);
-    lv_label_set_text(title, "PHYTEC Game Launcher");
+    lv_label_set_text(title, "PHYTEC Handheld-One");
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
@@ -201,17 +205,6 @@ void build_ui()
 
             lv_obj_t *img = lv_image_create(card);
             lv_image_set_src(img, lvgl_path);
-
-            /* Scale image to cover the card regardless of source size */
-            lv_obj_update_layout(img);
-            int32_t img_w = lv_obj_get_width(img);
-            int32_t img_h = lv_obj_get_height(img);
-            if (img_w > 0 && img_h > 0) {
-                int32_t scale_x = (CARD_W * 256) / img_w;
-                int32_t scale_y = (CARD_H * 256) / img_h;
-                int32_t scale   = (scale_x > scale_y) ? scale_x : scale_y;
-                lv_image_set_scale(img, scale);
-            }
             lv_obj_center(img);
 
             /* Semi-transparent name strip (scales with card height) */
