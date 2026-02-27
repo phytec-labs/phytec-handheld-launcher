@@ -205,6 +205,17 @@ void build_ui()
 
             lv_obj_t *img = lv_image_create(card);
             lv_image_set_src(img, lvgl_path);
+
+            /* Scale to cover the card — cheap now that decoded data is cached */
+            lv_obj_update_layout(img);
+            int32_t img_w = lv_obj_get_width(img);
+            int32_t img_h = lv_obj_get_height(img);
+            if (img_w > 0 && img_h > 0) {
+                int32_t scale_x = (CARD_W * 256) / img_w;
+                int32_t scale_y = (CARD_H * 256) / img_h;
+                int32_t scale   = (scale_x > scale_y) ? scale_x : scale_y;
+                lv_image_set_scale(img, scale);
+            }
             lv_obj_center(img);
 
             /* Semi-transparent name strip (scales with card height) */
