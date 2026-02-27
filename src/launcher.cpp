@@ -1,14 +1,12 @@
 #include "launcher.h"
 #include "ui.h"
+#include "input.h"
 #include <cstdio>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <SDL2/SDL.h>
-
-#define LV_CONF_INCLUDE_SIMPLE 1
-#include "lvgl/lvgl.h"
 
 extern SDL_Window   *sdl_window;
 extern SDL_Renderer *sdl_renderer;
