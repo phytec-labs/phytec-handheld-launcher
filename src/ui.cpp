@@ -160,8 +160,8 @@ void build_ui()
 
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text(title, "PHYTEC Handheld-One");
-    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *hint = lv_label_create(header);
