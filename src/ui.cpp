@@ -125,7 +125,7 @@ void update_selection(int new_index)
                               lv_color_hex(0x1a2744), 0);
 
     /* Scroll the screen so the selected card is visible (for rows beyond the viewport) */
-    lv_obj_scroll_to_view(cards[selected_index], LV_ANIM_ON);
+    lv_obj_scroll_to_view(cards[selected_index], LV_ANIM_OFF);
 }
 
 static void card_click_cb(lv_event_t *e)

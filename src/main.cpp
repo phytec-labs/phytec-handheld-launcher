@@ -24,8 +24,10 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     SDL_UpdateTexture(sdl_texture, &rect,
                       reinterpret_cast<uint32_t *>(px_map),
                       w * static_cast<int>(sizeof(uint32_t)));
-    SDL_RenderCopy(sdl_renderer, sdl_texture, nullptr, nullptr);
-    SDL_RenderPresent(sdl_renderer);
+    if (lv_display_flush_is_last(disp)) {
+        SDL_RenderCopy(sdl_renderer, sdl_texture, nullptr, nullptr);
+        SDL_RenderPresent(sdl_renderer);
+    }
     lv_display_flush_ready(disp);
 }
 

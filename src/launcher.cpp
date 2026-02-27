@@ -7,9 +7,16 @@
 #include <sys/wait.h>
 #include <SDL2/SDL.h>
 
-extern SDL_Window *sdl_window;
-extern Uint32      resume_time;
-extern bool        touch_pressed;
+#define LV_CONF_INCLUDE_SIMPLE 1
+#include "lvgl/lvgl.h"
+
+extern SDL_Window   *sdl_window;
+extern SDL_Renderer *sdl_renderer;
+extern SDL_Texture  *sdl_texture;
+extern int           win_w;
+extern int           win_h;
+extern Uint32        resume_time;
+extern bool          touch_pressed;
 
 void launch_game(const Game *game)
 {
@@ -56,6 +63,20 @@ void launch_game(const Game *game)
 
     SDL_JoystickEventState(SDL_ENABLE);
     SDL_GameControllerEventState(SDL_ENABLE);
+
+    /* Free GPU-accessible texture memory so the child process has full access
+     * to shared CPU/GPU memory (critical for GPU benchmarks and games).
+     * The LVGL image cache is also evicted — it will be repopulated naturally
+     * on the first redraw after the child exits. */
+    SDL_DestroyTexture(sdl_texture);
+    sdl_texture = nullptr;
+    for (int i = 0; i < num_games; i++) {
+        if (games[i].icon[0] != '\0') {
+            char lvgl_path[MAX_STR + 2];
+            snprintf(lvgl_path, sizeof(lvgl_path), "A:%s", games[i].icon);
+            lv_image_cache_drop(lvgl_path);
+        }
+    }
 
     printf("Entering wait loop for pid %d (killable=%d, kill_button=%d)\n",
            pid, game->killable, game->kill_button);
@@ -117,6 +138,17 @@ void launch_game(const Game *game)
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     touch_pressed = false;
     resume_time   = SDL_GetTicks();
+
+    /* Recreate the streaming texture before restoring the window so
+     * flush_cb has a valid target when LVGL redraws. */
+    sdl_texture = SDL_CreateTexture(
+        sdl_renderer,
+        SDL_PIXELFORMAT_ARGB8888,
+        SDL_TEXTUREACCESS_STREAMING,
+        win_w, win_h
+    );
+    if (!sdl_texture)
+        fprintf(stderr, "SDL_CreateTexture failed on resume: %s\n", SDL_GetError());
 
     SDL_Delay(300);
     SDL_ShowWindow(sdl_window);
