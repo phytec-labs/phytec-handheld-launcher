@@ -259,7 +259,7 @@ void open_controller_config()
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t *hint = lv_label_create(ov);
-    lv_label_set_text(hint, "B: Back");
+    lv_label_set_text(hint, "Select: Back");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
     lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 4);
@@ -490,7 +490,10 @@ void close_controller_config()
 void settings_handle_button(SDL_GameControllerButton btn)
 {
     if (controller_cfg_active) {
-        if (btn == SDL_CONTROLLER_BUTTON_B) {
+        /* Use SELECT (Back) to exit controller config — NOT B,
+         * because the whole point of this screen is testing ALL buttons
+         * including B.  B press is shown as visual feedback instead. */
+        if (btn == SDL_CONTROLLER_BUTTON_BACK) {
             close_controller_config();
             open_settings_menu();
         }
@@ -500,6 +503,7 @@ void settings_handle_button(SDL_GameControllerButton btn)
     if (settings_active) {
         switch (btn) {
             case SDL_CONTROLLER_BUTTON_B:
+            case SDL_CONTROLLER_BUTTON_BACK:
                 close_settings_menu();
                 break;
             case SDL_CONTROLLER_BUTTON_A:
