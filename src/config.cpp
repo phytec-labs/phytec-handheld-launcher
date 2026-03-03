@@ -7,6 +7,7 @@
 Game games[MAX_GAMES];
 int  num_games    = 0;
 int  home_button  = -1;
+bool input_debug  = false;
 
 static void trim(char *s)
 {

@@ -103,6 +103,8 @@ void launch_game(const Game *game)
 
     printf("Entering wait loop for pid %d (home_button=%d)\n",
            pid, home_button);
+    input_debug_log("[input-debug] === WAIT LOOP (child pid %d) ===\n", pid);
+    input_debug_log("[input-debug] home_button=%d  — press buttons to see indices\n", home_button);
 
     bool child_running = true;
     while (child_running) {
@@ -136,13 +138,33 @@ void launch_game(const Game *game)
                     break;
                 case SDL_CONTROLLERBUTTONDOWN:
                     printf("Controller button %d\n", ev.cbutton.button);
+                    input_debug_log("[input-debug] WAIT CONTROLLERBUTTONDOWN  button=%d\n",
+                                    ev.cbutton.button);
+                    break;
+                case SDL_CONTROLLERBUTTONUP:
+                    input_debug_log("[input-debug] WAIT CONTROLLERBUTTONUP    button=%d\n",
+                                    ev.cbutton.button);
                     break;
                 case SDL_JOYBUTTONDOWN:
                     printf("Joystick button %d (home_button=%d)\n",
                            ev.jbutton.button, home_button);
+                    input_debug_log("[input-debug] WAIT JOYBUTTONDOWN         button=%d  "
+                                    "joystick=%d  (home_button=%d)%s\n",
+                                    ev.jbutton.button, ev.jbutton.which, home_button,
+                                    (home_button >= 0 && ev.jbutton.button == (Uint8)home_button)
+                                        ? "  *** MATCH — KILL ***" : "");
                     if (home_button >= 0 &&
                         ev.jbutton.button == (Uint8)home_button)
                         do_kill = true;
+                    break;
+                case SDL_JOYBUTTONUP:
+                    input_debug_log("[input-debug] WAIT JOYBUTTONUP           button=%d  joystick=%d\n",
+                                    ev.jbutton.button, ev.jbutton.which);
+                    break;
+                case SDL_JOYAXISMOTION:
+                    if (ev.jaxis.value > 16000 || ev.jaxis.value < -16000)
+                        input_debug_log("[input-debug] WAIT JOYAXIS               axis=%d  value=%d\n",
+                                        ev.jaxis.axis, ev.jaxis.value);
                     break;
                 default:
                     break;

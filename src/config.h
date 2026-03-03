@@ -19,5 +19,8 @@ struct Game {
 extern Game games[MAX_GAMES];
 extern int  num_games;
 extern int  home_button;  /* raw joystick button index that always kills the child, -1 = disabled */
+extern bool input_debug;  /* --input-debug: log all SDL input events to console + file */
+
+#define INPUT_DEBUG_LOG "/tmp/phytec_launcher_input.log"
 
 void load_config();

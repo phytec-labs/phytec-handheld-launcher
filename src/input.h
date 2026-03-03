@@ -9,6 +9,10 @@ void handle_gamepad_button(SDL_GameControllerButton btn);
 void read_cb(lv_indev_t *indev, lv_indev_data_t *data);
 void handle_gamepad_axis(SDL_ControllerAxisEvent *axis);
 
+/* printf-style logger; writes to stdout + /tmp/phytec_launcher_input.log
+   when --input-debug is active.  No-op otherwise. */
+void input_debug_log(const char *fmt, ...) __attribute__((format(printf,1,2)));
+
 extern SDL_GameController *sdl_gamepad;
 extern int32_t touch_x;
 extern int32_t touch_y;

@@ -1,5 +1,7 @@
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
+#include <cstdarg>
 #include <SDL2/SDL.h>
 
 #define LV_CONF_INCLUDE_SIMPLE 1
@@ -16,6 +18,28 @@ SDL_Texture  *sdl_texture  = nullptr;
 int           win_w        = 800;
 int           win_h        = 480;
 
+/* ── input-debug logging ────────────────────────────────────────── */
+
+static FILE *debug_log_file = nullptr;
+
+void input_debug_log(const char *fmt, ...)
+{
+    if (!input_debug) return;
+
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+
+    if (debug_log_file) {
+        va_start(ap, fmt);
+        vfprintf(debug_log_file, fmt, ap);
+        va_end(ap);
+        fflush(debug_log_file);
+    }
+}
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     int w = area->x2 - area->x1 + 1;
@@ -31,15 +55,33 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     lv_display_flush_ready(disp);
 }
 
-int main(int /*argc*/, char ** /*argv*/)
+int main(int argc, char **argv)
 {
+    /* Parse CLI flags */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--input-debug") == 0)
+            input_debug = true;
+    }
+
     load_config();
     if (num_games == 0) {
         fprintf(stderr, "No valid games found in config. Exiting.\n");
         return 1;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) < 0) {
+    /* Open debug log file if input-debug mode is active */
+    if (input_debug) {
+        debug_log_file = fopen(INPUT_DEBUG_LOG, "w");
+        if (!debug_log_file)
+            fprintf(stderr, "Warning: could not open %s for writing\n", INPUT_DEBUG_LOG);
+        printf("=== INPUT DEBUG MODE ===\n");
+        printf("All SDL input events will be logged to stdout and %s\n", INPUT_DEBUG_LOG);
+        printf("Press buttons/touch/move sticks to see their SDL mapping.\n");
+        printf("========================\n");
+    }
+
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS |
+                 SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) < 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
@@ -84,6 +126,39 @@ int main(int /*argc*/, char ** /*argv*/)
     );
 
     init_gamepad();
+
+    /* In input-debug mode, enumerate all SDL input devices and open any
+       raw joysticks so we can see their button events in the main loop. */
+    SDL_Joystick *debug_joy = nullptr;
+    if (input_debug) {
+        int n = SDL_NumJoysticks();
+        input_debug_log("[input-debug] SDL sees %d joystick device(s):\n", n);
+        for (int i = 0; i < n; i++) {
+            bool is_gc = SDL_IsGameController(i);
+            input_debug_log("[input-debug]   [%d] \"%s\"  GameController=%s\n",
+                            i, SDL_JoystickNameForIndex(i),
+                            is_gc ? "YES" : "NO");
+            if (is_gc) {
+                SDL_GameController *gc = SDL_GameControllerFromInstanceID(
+                    SDL_JoystickGetDeviceInstanceID(i));
+                if (gc)
+                    input_debug_log("[input-debug]        mapping: %s\n",
+                                    SDL_GameControllerMapping(gc));
+            }
+            /* Open first non-GameController joystick so we see its raw events */
+            if (!is_gc && !debug_joy) {
+                debug_joy = SDL_JoystickOpen(i);
+                if (debug_joy)
+                    input_debug_log("[input-debug]   Opened [%d] as raw joystick "
+                                    "(%d buttons, %d axes, %d hats)\n",
+                                    i, SDL_JoystickNumButtons(debug_joy),
+                                    SDL_JoystickNumAxes(debug_joy),
+                                    SDL_JoystickNumHats(debug_joy));
+            }
+        }
+        input_debug_log("[input-debug] home_button=%d\n\n", home_button);
+    }
+
     lv_init();
 
     lv_display_t *disp = lv_display_create(win_w, win_h);
@@ -132,13 +207,50 @@ int main(int /*argc*/, char ** /*argv*/)
                     }
                     break;
                 case SDL_CONTROLLERBUTTONDOWN:
+                    input_debug_log("[input-debug] CONTROLLERBUTTONDOWN  button=%d (%s)\n",
+                                    ev.cbutton.button,
+                                    SDL_GameControllerGetStringForButton(
+                                        static_cast<SDL_GameControllerButton>(ev.cbutton.button)));
                     handle_gamepad_button(
                         static_cast<SDL_GameControllerButton>(ev.cbutton.button));
                     break;
+                case SDL_CONTROLLERBUTTONUP:
+                    input_debug_log("[input-debug] CONTROLLERBUTTONUP    button=%d (%s)\n",
+                                    ev.cbutton.button,
+                                    SDL_GameControllerGetStringForButton(
+                                        static_cast<SDL_GameControllerButton>(ev.cbutton.button)));
+                    break;
                 case SDL_CONTROLLERAXISMOTION:
+                    if (ev.caxis.value > AXIS_DEADZONE ||
+                        ev.caxis.value < -AXIS_DEADZONE)
+                        input_debug_log("[input-debug] CONTROLLERAXIS        axis=%d (%s) value=%d\n",
+                                        ev.caxis.axis,
+                                        SDL_GameControllerGetStringForAxis(
+                                            static_cast<SDL_GameControllerAxis>(ev.caxis.axis)),
+                                        ev.caxis.value);
                     handle_gamepad_axis(&ev.caxis);
                     break;
+                case SDL_JOYBUTTONDOWN:
+                    input_debug_log("[input-debug] JOYBUTTONDOWN         button=%d  joystick=%d\n",
+                                    ev.jbutton.button, ev.jbutton.which);
+                    break;
+                case SDL_JOYBUTTONUP:
+                    input_debug_log("[input-debug] JOYBUTTONUP           button=%d  joystick=%d\n",
+                                    ev.jbutton.button, ev.jbutton.which);
+                    break;
+                case SDL_JOYAXISMOTION:
+                    if (ev.jaxis.value > AXIS_DEADZONE ||
+                        ev.jaxis.value < -AXIS_DEADZONE)
+                        input_debug_log("[input-debug] JOYAXIS               axis=%d  value=%d  joystick=%d\n",
+                                        ev.jaxis.axis, ev.jaxis.value, ev.jaxis.which);
+                    break;
+                case SDL_JOYHATMOTION:
+                    input_debug_log("[input-debug] JOYHAT                hat=%d  value=%d  joystick=%d\n",
+                                    ev.jhat.hat, ev.jhat.value, ev.jhat.which);
+                    break;
                 case SDL_MOUSEBUTTONDOWN:
+                    input_debug_log("[input-debug] MOUSEBUTTONDOWN       x=%d y=%d button=%d\n",
+                                    ev.button.x, ev.button.y, ev.button.button);
                     if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
                         touch_pressed = true;
                         touch_x = ev.button.x;
@@ -155,6 +267,9 @@ int main(int /*argc*/, char ** /*argv*/)
                     touch_y = ev.motion.y;
                     break;
                 case SDL_FINGERDOWN:
+                    input_debug_log("[input-debug] FINGERDOWN             x=%.3f y=%.3f finger=%lld\n",
+                                    ev.tfinger.x, ev.tfinger.y,
+                                    (long long)ev.tfinger.fingerId);
                     if (SDL_GetTicks() - resume_time >= TOUCH_DEBOUNCE_MS) {
                         touch_pressed = true;
                         touch_x = static_cast<int32_t>(ev.tfinger.x * win_w);
@@ -179,7 +294,9 @@ int main(int /*argc*/, char ** /*argv*/)
         SDL_Delay(LV_MIN(sleep_ms, 5));
     }
 
+    if (debug_joy) SDL_JoystickClose(debug_joy);
     if (sdl_gamepad) SDL_GameControllerClose(sdl_gamepad);
+    if (debug_log_file) fclose(debug_log_file);
     delete[] buf1;
     delete[] buf2;
     SDL_DestroyTexture(sdl_texture);
