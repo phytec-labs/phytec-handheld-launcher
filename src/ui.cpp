@@ -2,6 +2,7 @@
 #include "config.h"
 #include "launcher.h"
 #include "input.h"
+#include "settings.h"
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
@@ -135,6 +136,11 @@ static void card_click_cb(lv_event_t *e)
     launch_game(game);
 }
 
+static void gear_click_cb(lv_event_t * /*e*/)
+{
+    open_settings_menu();
+}
+
 void build_ui()
 {
     const int CARD_W = (win_w - PAD * 2 - GAP * (COLS - 1)) / COLS;
@@ -168,7 +174,25 @@ void build_ui()
     lv_label_set_text(hint, "D-Pad: Navigate     A: Launch");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -50, 0);
+
+    /* Gear icon — opens Settings */
+    lv_obj_t *gear_btn = lv_button_create(header);
+    lv_obj_set_size(gear_btn, 44, 36);
+    lv_obj_align(gear_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_opa(gear_btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(gear_btn, 0, 0);
+    lv_obj_set_style_shadow_width(gear_btn, 0, 0);
+    lv_obj_set_style_pad_all(gear_btn, 0, 0);
+    lv_obj_set_style_bg_opa(gear_btn, LV_OPA_30, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(gear_btn, lv_color_hex(COL_ACCENT), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(gear_btn, gear_click_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *gear_lbl = lv_label_create(gear_btn);
+    lv_label_set_text(gear_lbl, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_color(gear_lbl, lv_color_hex(COL_SUBTEXT), 0);
+    lv_obj_set_style_text_font(gear_lbl, &lv_font_montserrat_20, 0);
+    lv_obj_center(gear_lbl);
 
     for (int i = 0; i < num_games; i++) {
         int col = i % COLS;

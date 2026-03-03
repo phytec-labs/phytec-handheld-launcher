@@ -18,15 +18,15 @@
 
 ```
 src/
-  main.cpp      Entry point; SDL2 + LVGL init; main event loop
+  main.cpp      Entry point; SDL2 + LVGL init; --input-debug CLI; main event loop
   config.cpp    INI config parser (/etc/phytec-launcher/launcher.conf)
-  config.h      Game struct (MAX_GAMES=12, MAX_ARGS=8, MAX_STR=256)
+  config.h      Game struct (MAX_GAMES=12, MAX_ARGS=8, MAX_STR=256); input_debug flag
   ui.cpp        LVGL card grid (3 cols × 2 visible rows); cover art; scroll; results overlay
   ui.h          Layout constants (COLS, ROWS, HEADER_H, PAD, GAP) and color palette
-  launcher.cpp  fork()/execv() launch; kill-button loop; output capture
+  launcher.cpp  fork()/execv() launch; home-button wait loop; output capture
   launcher.h    Declares launch_game(); OUTPUT_TMP path
   input.cpp     Gamepad init; D-pad navigation; analog stick deadzone/repeat
-  input.h       AXIS_DEADZONE=16000, AXIS_REPEAT_MS=250, TOUCH_DEBOUNCE_MS=600
+  input.h       AXIS_DEADZONE=16000, AXIS_REPEAT_MS=250, TOUCH_DEBOUNCE_MS=600; input_debug_log()
 assets/
   loading.png   Loading screen image
 ```
@@ -67,8 +67,13 @@ The launcher requires several LVGL features not enabled by default. A bbappend p
 
 Config file: `/etc/phytec-launcher/launcher.conf` (auto-generated with defaults on first run)
 
-INI format with `[game]` sections:
+INI format with a `[launcher]` global section and `[game]` sections:
 ```ini
+[launcher]
+home_button=8        # raw SDL joystick button index that kills any running
+                     # child and returns to launcher; -1 = disabled
+                     # use --input-debug to discover the correct index
+
 [game]
 name=SuperTuxKart
 binary=/usr/bin/supertuxkart
@@ -97,16 +102,47 @@ Environment variables (set via systemd unit):
 
 ## Input
 
+### SDL2 dual API model
+
+SDL2 exposes two joystick APIs. Understanding which path a device takes is critical:
+
+- **GameController** (high-level): Devices in SDL2's internal database (Xbox, PS4, etc.) are opened via `SDL_GameControllerOpen()` and fire `SDL_CONTROLLERBUTTONDOWN` events with **named enum values** (`SDL_CONTROLLER_BUTTON_A`, `SDL_CONTROLLER_BUTTON_DPAD_UP`, etc.). These drive grid navigation in the main loop.
+- **Joystick** (low-level): Devices **not** in the database are opened via `SDL_JoystickOpen()` and fire `SDL_JOYBUTTONDOWN` events with **0-based sequential button indices**. The home button kill mechanism uses this API.
+
+The button index in `SDL_JOYBUTTONDOWN` is **not** the same as the kernel evtest code — SDL assigns sequential indices based on the driver's registered capabilities.
+
+### Input methods
+
 | Method | How |
 |--------|-----|
 | Touchscreen | Via Weston/Wayland — no direct evdev needed; scrollable grid |
 | Gamepad D-pad | SDL2 `SDL_CONTROLLERBUTTONDOWN` events; navigates grid with auto-scroll |
 | Analog stick | SDL2 axis events; deadzone 16000/32767 (~50%); 250ms repeat |
-| Start button | Kills running child if `killable=true` in config |
-| Custom kill button | Configured via `kill_button=N` per game |
+| Home button | Global `home_button=N` in `[launcher]` config; matches `SDL_JOYBUTTONDOWN` index; kills any running child |
 | MSPM0 I2C joystick | **Not yet integrated** — see `TODO` markers in `input.cpp`/`input.h` |
 
 When the grid has more than 6 apps (3 cols × 2 visible rows), additional rows scroll. D-pad/analog navigation calls `lv_obj_scroll_to_view()` to auto-scroll to off-screen cards.
+
+### Home button (child kill)
+
+The `[launcher]` section's `home_button=N` sets a global raw joystick button index. While a child app is running, the wait loop in `launcher.cpp` polls `SDL_JOYBUTTONDOWN` events and kills the child (SIGTERM → SIGKILL) when the button matches. The value `N` is the SDL joystick button index, discoverable via `--input-debug` mode.
+
+For devices recognized as GameControllers (e.g. Xbox), SDL also emits underlying `SDL_JOYBUTTONDOWN` events, so the home button works for both mapped and unmapped controllers.
+
+### Input debug mode
+
+Run with `--input-debug` to log **all** SDL input events to both stdout and `/tmp/phytec_launcher_input.log`:
+
+```bash
+phytec-launcher --input-debug
+```
+
+This mode:
+1. Enumerates all SDL joystick devices at startup (name, GameController yes/no, button/axis/hat counts)
+2. Logs every button press, axis movement, hat change, and touch event in the main loop with the SDL event type and index
+3. Logs all events in the wait loop (while a child is running), marking home button matches with `*** MATCH — KILL ***`
+
+Use this to discover the correct `home_button=` index for any controller. The log file persists at `/tmp/phytec_launcher_input.log` for review after testing.
 
 ---
 

@@ -2,6 +2,7 @@
 #include "launcher.h"
 #include "config.h"
 #include "ui.h"
+#include "settings.h"
 #include <cstdio>
 
 #define LV_CONF_INCLUDE_SIMPLE 1
@@ -47,6 +48,10 @@ void handle_gamepad_button(SDL_GameControllerButton btn)
         return;
     }
 
+    /* Settings/controller-config screens are handled via
+     * settings_handle_button() in main.cpp routing — block grid nav. */
+    if (settings_active || controller_cfg_active) return;
+
     int col = selected_index % COLS;
     int row = selected_index / COLS;
 
@@ -70,6 +75,9 @@ void handle_gamepad_button(SDL_GameControllerButton btn)
         case SDL_CONTROLLER_BUTTON_A:
             launch_game(&games[selected_index]);
             break;
+        case SDL_CONTROLLER_BUTTON_BACK:   /* SELECT — open settings */
+            open_settings_menu();
+            break;
         default:
             break;
     }
@@ -86,8 +94,8 @@ void handle_gamepad_axis(SDL_ControllerAxisEvent *axis)
     Uint32 now = SDL_GetTicks();
     if (now - last_axis_move < AXIS_REPEAT_MS) return;
 
-    /* If results screen is active, ignore joystick nav */
-    if (results_active) return;
+    /* If any overlay is active, ignore joystick nav */
+    if (results_active || settings_active || controller_cfg_active) return;
 
     int col = selected_index % COLS;
     int row = selected_index / COLS;

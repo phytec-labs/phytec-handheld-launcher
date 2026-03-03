@@ -11,6 +11,7 @@
 #include "input.h"
 #include "ui.h"
 #include "launcher.h"
+#include "settings.h"
 
 SDL_Window   *sdl_window   = nullptr;
 SDL_Renderer *sdl_renderer = nullptr;
@@ -211,14 +212,25 @@ int main(int argc, char **argv)
                                     ev.cbutton.button,
                                     SDL_GameControllerGetStringForButton(
                                         static_cast<SDL_GameControllerButton>(ev.cbutton.button)));
-                    handle_gamepad_button(
-                        static_cast<SDL_GameControllerButton>(ev.cbutton.button));
+                    if (controller_cfg_active) {
+                        controller_cfg_on_joy_button(ev.cbutton.button, true);
+                        settings_handle_button(
+                            static_cast<SDL_GameControllerButton>(ev.cbutton.button));
+                    } else if (settings_active) {
+                        settings_handle_button(
+                            static_cast<SDL_GameControllerButton>(ev.cbutton.button));
+                    } else {
+                        handle_gamepad_button(
+                            static_cast<SDL_GameControllerButton>(ev.cbutton.button));
+                    }
                     break;
                 case SDL_CONTROLLERBUTTONUP:
                     input_debug_log("[input-debug] CONTROLLERBUTTONUP    button=%d (%s)\n",
                                     ev.cbutton.button,
                                     SDL_GameControllerGetStringForButton(
                                         static_cast<SDL_GameControllerButton>(ev.cbutton.button)));
+                    if (controller_cfg_active)
+                        controller_cfg_on_joy_button(ev.cbutton.button, false);
                     break;
                 case SDL_CONTROLLERAXISMOTION:
                     if (ev.caxis.value > AXIS_DEADZONE ||
@@ -228,25 +240,36 @@ int main(int argc, char **argv)
                                         SDL_GameControllerGetStringForAxis(
                                             static_cast<SDL_GameControllerAxis>(ev.caxis.axis)),
                                         ev.caxis.value);
-                    handle_gamepad_axis(&ev.caxis);
+                    if (controller_cfg_active)
+                        controller_cfg_on_axis(ev.caxis.axis, ev.caxis.value);
+                    else
+                        handle_gamepad_axis(&ev.caxis);
                     break;
                 case SDL_JOYBUTTONDOWN:
                     input_debug_log("[input-debug] JOYBUTTONDOWN         button=%d  joystick=%d\n",
                                     ev.jbutton.button, ev.jbutton.which);
+                    if (controller_cfg_active)
+                        controller_cfg_on_joy_button(ev.jbutton.button, true);
                     break;
                 case SDL_JOYBUTTONUP:
                     input_debug_log("[input-debug] JOYBUTTONUP           button=%d  joystick=%d\n",
                                     ev.jbutton.button, ev.jbutton.which);
+                    if (controller_cfg_active)
+                        controller_cfg_on_joy_button(ev.jbutton.button, false);
                     break;
                 case SDL_JOYAXISMOTION:
                     if (ev.jaxis.value > AXIS_DEADZONE ||
                         ev.jaxis.value < -AXIS_DEADZONE)
                         input_debug_log("[input-debug] JOYAXIS               axis=%d  value=%d  joystick=%d\n",
                                         ev.jaxis.axis, ev.jaxis.value, ev.jaxis.which);
+                    if (controller_cfg_active)
+                        controller_cfg_on_axis(ev.jaxis.axis, ev.jaxis.value);
                     break;
                 case SDL_JOYHATMOTION:
                     input_debug_log("[input-debug] JOYHAT                hat=%d  value=%d  joystick=%d\n",
                                     ev.jhat.hat, ev.jhat.value, ev.jhat.which);
+                    if (controller_cfg_active)
+                        controller_cfg_on_hat(ev.jhat.hat, ev.jhat.value);
                     break;
                 case SDL_MOUSEBUTTONDOWN:
                     input_debug_log("[input-debug] MOUSEBUTTONDOWN       x=%d y=%d button=%d\n",
