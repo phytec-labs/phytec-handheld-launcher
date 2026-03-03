@@ -19,8 +19,6 @@ extern int win_h;
 
 #define COLS 3
 #define ROWS 2
-#define AXIS_DEADZONE    16000   /* 0-32767 range, ~50% threshold */
-#define AXIS_REPEAT_MS     250   /* minimum ms between axis nav events */
 
 static Uint32 last_axis_move = 0;
 

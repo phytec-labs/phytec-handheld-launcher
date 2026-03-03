@@ -19,4 +19,6 @@ extern int32_t touch_y;
 extern bool    touch_pressed;
 extern Uint32  resume_time;
 
-#define TOUCH_DEBOUNCE_MS 600
+#define TOUCH_DEBOUNCE_MS  600
+#define AXIS_DEADZONE    16000   /* 0-32767 range, ~50% threshold */
+#define AXIS_REPEAT_MS     250   /* minimum ms between axis nav events */
