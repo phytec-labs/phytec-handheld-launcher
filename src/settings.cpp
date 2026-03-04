@@ -26,11 +26,14 @@ struct ControllerDisplayState {
     int  num_buttons;
     int  num_axes;
     int  num_hats;
+    bool is_game_controller;
 
     lv_obj_t *button_indicators[MAX_DISPLAY_BUTTONS];
+    lv_obj_t *button_labels[MAX_DISPLAY_BUTTONS];
     lv_obj_t *axis_bars[MAX_DISPLAY_AXES];
     lv_obj_t *axis_value_labels[MAX_DISPLAY_AXES];
     lv_obj_t *event_log_label;
+    lv_obj_t *toggle_label;    /* label inside the Index/Symbols toggle button */
 
     /* Event log ring buffer */
     char event_log[MAX_EVENT_LOG_LINES][128];
@@ -39,8 +42,48 @@ struct ControllerDisplayState {
 };
 
 static ControllerDisplayState ds;
+static bool show_symbols = true; /* true = named labels, false = numeric indices */
 
 /* ── Helpers ─────────────────────────────────────────────────── */
+
+static const char *gc_labels[] = {
+    "A", "B", "X", "Y",        /* 0-3  */
+    "BK", "G", "ST",            /* 4-6  BACK, GUIDE, START */
+    "LS", "RS",                 /* 7-8  stick clicks */
+    "LB", "RB",                 /* 9-10 shoulders */
+    LV_SYMBOL_UP, LV_SYMBOL_DOWN,     /* 11-12 D-pad */
+    LV_SYMBOL_LEFT, LV_SYMBOL_RIGHT   /* 13-14 D-pad */
+};
+static const int n_gc_labels = (int)(sizeof(gc_labels) / sizeof(gc_labels[0]));
+
+static void refresh_button_labels()
+{
+    for (int i = 0; i < ds.num_buttons; i++) {
+        lv_obj_t *lbl = ds.button_labels[i];
+        if (!lbl) continue;
+
+        if (show_symbols && ds.is_game_controller && i < n_gc_labels) {
+            lv_label_set_text(lbl, gc_labels[i]);
+        } else {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", i);
+            lv_label_set_text(lbl, buf);
+        }
+    }
+}
+
+static void label_toggle_cb(lv_event_t * /*e*/)
+{
+    show_symbols = !show_symbols;
+    refresh_button_labels();
+
+    /* Update the toggle button's own label to show opposite action */
+    if (ds.toggle_label) {
+        lv_label_set_text(ds.toggle_label,
+                          show_symbols ? LV_SYMBOL_LOOP " Index"
+                                       : LV_SYMBOL_LOOP " Symbols");
+    }
+}
 
 static void append_event_log(const char *fmt, ...)
 {
@@ -211,6 +254,12 @@ void open_controller_config()
         num_btns = SDL_JoystickNumButtons(joy);
         num_axes = SDL_JoystickNumAxes(joy);
         num_hats = SDL_JoystickNumHats(joy);
+
+        /* GameController API maps D-pad hat to virtual buttons 11-14
+         * (DPAD_UP/DOWN/LEFT/RIGHT).  These are beyond the raw
+         * JoystickNumButtons count, so extend to cover them. */
+        if (num_btns < SDL_CONTROLLER_BUTTON_DPAD_RIGHT + 1)
+            num_btns = SDL_CONTROLLER_BUTTON_DPAD_RIGHT + 1;
     } else {
         /* Try to open the first available raw joystick */
         int n = SDL_NumJoysticks();
@@ -233,9 +282,10 @@ void open_controller_config()
 
     if (num_btns > MAX_DISPLAY_BUTTONS) num_btns = MAX_DISPLAY_BUTTONS;
     if (num_axes > MAX_DISPLAY_AXES)    num_axes = MAX_DISPLAY_AXES;
-    ds.num_buttons = num_btns;
-    ds.num_axes    = num_axes;
-    ds.num_hats    = num_hats;
+    ds.num_buttons         = num_btns;
+    ds.num_axes            = num_axes;
+    ds.num_hats            = num_hats;
+    ds.is_game_controller  = is_gc;
 
     /* ── Build overlay ───────────────────────────────────────── */
     lv_obj_t *scr = lv_screen_active();
@@ -299,6 +349,29 @@ void open_controller_config()
         lv_obj_set_style_text_font(btn_title, &lv_font_montserrat_14, 0);
         lv_obj_set_pos(btn_title, PAD, content_y);
 
+        /* Index / Symbols toggle (only meaningful for GameController) */
+        if (is_gc) {
+            lv_obj_t *tog = lv_button_create(ov);
+            lv_obj_set_size(tog, 110, 24);
+            lv_obj_set_pos(tog, PAD + 80, content_y - 3);
+            lv_obj_set_style_bg_color(tog, lv_color_hex(COL_CARD), 0);
+            lv_obj_set_style_bg_opa(tog, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(tog, 1, 0);
+            lv_obj_set_style_border_color(tog, lv_color_hex(COL_CARD_BORDER), 0);
+            lv_obj_set_style_radius(tog, 6, 0);
+            lv_obj_set_style_pad_all(tog, 0, 0);
+            lv_obj_set_style_bg_color(tog, lv_color_hex(COL_PRESSED), LV_STATE_PRESSED);
+            lv_obj_add_event_cb(tog, label_toggle_cb, LV_EVENT_CLICKED, nullptr);
+
+            lv_obj_t *tog_lbl = lv_label_create(tog);
+            lv_label_set_text(tog_lbl, show_symbols ? LV_SYMBOL_LOOP " Index"
+                                                    : LV_SYMBOL_LOOP " Symbols");
+            lv_obj_set_style_text_color(tog_lbl, lv_color_hex(COL_SUBTEXT), 0);
+            lv_obj_set_style_text_font(tog_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_center(tog_lbl);
+            ds.toggle_label = tog_lbl;
+        }
+
         lv_obj_t *btn_panel = lv_obj_create(ov);
         lv_obj_set_pos(btn_panel, PAD, content_y + 22);
         lv_obj_set_size(btn_panel, btn_panel_w, main_h - 22);
@@ -335,15 +408,17 @@ void open_controller_config()
             lv_obj_clear_flag(ind, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
             lv_obj_t *lbl = lv_label_create(ind);
-            char num[8];
-            snprintf(num, sizeof(num), "%d", i);
-            lv_label_set_text(lbl, num);
+            lv_label_set_text(lbl, "");   /* filled by refresh_button_labels() */
             lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
             lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
             lv_obj_center(lbl);
 
             ds.button_indicators[i] = ind;
+            ds.button_labels[i]     = lbl;
         }
+
+        /* Apply current label mode (Index vs Symbols) */
+        refresh_button_labels();
     }
 
     /* ── Axis bars panel ─────────────────────────────────────── */
@@ -520,23 +595,27 @@ void settings_handle_button(SDL_GameControllerButton btn)
 
 void controller_cfg_on_joy_button(int button, bool pressed)
 {
-    if (button < 0 || button >= ds.num_buttons) return;
+    if (button < 0 || button >= MAX_DISPLAY_BUTTONS) return;
 
-    lv_obj_t *ind = ds.button_indicators[button];
-    if (!ind) return;
-
-    if (pressed) {
-        lv_obj_set_style_bg_color(ind, lv_color_hex(COL_ACCENT), 0);
-        lv_obj_set_style_border_color(ind, lv_color_white(), 0);
-        lv_obj_set_style_shadow_width(ind, 12, 0);
-        lv_obj_set_style_shadow_color(ind, lv_color_hex(COL_ACCENT), 0);
-        lv_obj_set_style_shadow_opa(ind, LV_OPA_60, 0);
-    } else {
-        lv_obj_set_style_bg_color(ind, lv_color_hex(COL_CARD), 0);
-        lv_obj_set_style_border_color(ind, lv_color_hex(COL_CARD_BORDER), 0);
-        lv_obj_set_style_shadow_width(ind, 0, 0);
+    /* Update visual indicator if one exists for this index */
+    if (button < ds.num_buttons) {
+        lv_obj_t *ind = ds.button_indicators[button];
+        if (ind) {
+            if (pressed) {
+                lv_obj_set_style_bg_color(ind, lv_color_hex(COL_ACCENT), 0);
+                lv_obj_set_style_border_color(ind, lv_color_white(), 0);
+                lv_obj_set_style_shadow_width(ind, 12, 0);
+                lv_obj_set_style_shadow_color(ind, lv_color_hex(COL_ACCENT), 0);
+                lv_obj_set_style_shadow_opa(ind, LV_OPA_60, 0);
+            } else {
+                lv_obj_set_style_bg_color(ind, lv_color_hex(COL_CARD), 0);
+                lv_obj_set_style_border_color(ind, lv_color_hex(COL_CARD_BORDER), 0);
+                lv_obj_set_style_shadow_width(ind, 0, 0);
+            }
+        }
     }
 
+    /* Always log, even for buttons beyond the visual grid */
     append_event_log("Button %d %s", button, pressed ? "PRESSED" : "RELEASED");
 }
 

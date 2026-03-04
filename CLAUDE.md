@@ -27,6 +27,8 @@ src/
   launcher.h    Declares launch_game(); OUTPUT_TMP path
   input.cpp     Gamepad init; D-pad navigation; analog stick deadzone/repeat
   input.h       AXIS_DEADZONE=16000, AXIS_REPEAT_MS=250, TOUCH_DEBOUNCE_MS=600; input_debug_log()
+  settings.cpp  Settings menu + controller configuration screen (two-level overlay)
+  settings.h    State flags (settings_active, controller_cfg_active); settings/controller API
 assets/
   loading.png   Loading screen image
 ```
@@ -143,6 +145,63 @@ This mode:
 3. Logs all events in the wait loop (while a child is running), marking home button matches with `*** MATCH — KILL ***`
 
 Use this to discover the correct `home_button=` index for any controller. The log file persists at `/tmp/phytec_launcher_input.log` for review after testing.
+
+### Dual-API event deduplication
+
+GameController devices fire **both** `SDL_CONTROLLERBUTTONDOWN` (mapped enum indices) and `SDL_JOYBUTTONDOWN` (raw sequential indices) — with **different numbering**. To prevent duplicate events in the controller config screen, `main.cpp` checks `SDL_JoystickInstanceID()` against the GameController's underlying joystick and skips raw `SDL_JOY*` events for devices already handled as GameControllers.
+
+---
+
+## Settings Screen
+
+Accessible via the gear icon (⚙) in the header bar or the SELECT button on a gamepad.
+
+### Architecture
+
+Two-level full-screen overlay system following the same pattern as `results_overlay` in `ui.cpp`:
+
+1. **Level 1 — Settings Menu**: Title, "Controller Configuration" card item, "Back to Launcher" button. Navigation: touch/tap, A to select, B or SELECT to close.
+
+2. **Level 2 — Controller Configuration**: Real-time visual feedback for all controller inputs. Navigation: touch/tap, SELECT to return to settings menu (B is deliberately not used as exit so it can be tested as a button input).
+
+State flags (`settings_active`, `controller_cfg_active`) gate input routing in `main.cpp` — when either overlay is active, normal grid navigation is blocked.
+
+### Controller Configuration screen
+
+Displays real-time controller state for debugging and future button remapping:
+
+- **Device info**: Name, type (GameController vs Raw Joystick), button/axis/hat counts
+- **Button indicators**: Numbered circles in a 6-column grid. Default: dark card color. Pressed: blue accent with white border and glow shadow. Labels show either symbolic names (A, B, X, Y, LB, ↑, etc.) or raw numeric indices
+- **Index/Symbols toggle**: Touchable button next to the "Buttons" section title (GameController only). Switches all button labels between named symbols and raw SDL indices. Persists across open/close cycles. Essential for discovering the correct `home_button=` index
+- **Axis bars**: Horizontal tracks with sliding indicators. Color changes at the deadzone threshold (dim → accent). Numeric value displayed to the right
+- **Event log**: Ring buffer of the last 8 events, rebuilt on each new event. Shows button presses/releases, axis values, and hat directions
+- **Hat events**: Logged with directional names (UP, DOWN, LEFT, RIGHT, and diagonals)
+
+### GameController D-pad handling
+
+SDL2's GameController API maps the D-pad hat (kernel `ABS_HAT0X`/`ABS_HAT0Y`) to virtual buttons 11–14 (`SDL_CONTROLLER_BUTTON_DPAD_UP` through `DPAD_RIGHT`). These indices exceed the raw `SDL_JoystickNumButtons()` count, so `open_controller_config()` extends `num_btns` to at least 15 for GameController devices.
+
+### Button label mapping (GameController)
+
+| Index | Symbol | SDL enum |
+|-------|--------|----------|
+| 0 | A | `SDL_CONTROLLER_BUTTON_A` |
+| 1 | B | `SDL_CONTROLLER_BUTTON_B` |
+| 2 | X | `SDL_CONTROLLER_BUTTON_X` |
+| 3 | Y | `SDL_CONTROLLER_BUTTON_Y` |
+| 4 | BK | `SDL_CONTROLLER_BUTTON_BACK` |
+| 5 | G | `SDL_CONTROLLER_BUTTON_GUIDE` |
+| 6 | ST | `SDL_CONTROLLER_BUTTON_START` |
+| 7 | LS | `SDL_CONTROLLER_BUTTON_LEFTSTICK` |
+| 8 | RS | `SDL_CONTROLLER_BUTTON_RIGHTSTICK` |
+| 9 | LB | `SDL_CONTROLLER_BUTTON_LEFTSHOULDER` |
+| 10 | RB | `SDL_CONTROLLER_BUTTON_RIGHTSHOULDER` |
+| 11 | ↑ | `SDL_CONTROLLER_BUTTON_DPAD_UP` |
+| 12 | ↓ | `SDL_CONTROLLER_BUTTON_DPAD_DOWN` |
+| 13 | ← | `SDL_CONTROLLER_BUTTON_DPAD_LEFT` |
+| 14 | → | `SDL_CONTROLLER_BUTTON_DPAD_RIGHT` |
+
+Raw joystick devices always display numeric indices (no symbolic mapping).
 
 ---
 
