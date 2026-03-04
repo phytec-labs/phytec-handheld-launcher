@@ -88,9 +88,10 @@ icon=/usr/share/phytec-launcher/covers/supertuxkart.png
 
 `config.cpp` validates each binary with `access(binary, X_OK)` and skips invalid entries with a warning.
 
-Environment variables (set via systemd unit):
-- `WAYLAND_DISPLAY=wayland-0`
+Environment variables (set via `phytec-launcher-start.sh`, inherited by child processes):
+- `WAYLAND_DISPLAY=/run/wayland-0`
 - `XDG_RUNTIME_DIR=/run/user/0`
+- `SDL_GAMECONTROLLERCONFIG=...` — MSPM0 gamepad mapping (see [SDL_GAMECONTROLLERCONFIG section](#sdl_gamecontrollerconfig-mspm0-mapping))
 
 ### Cover Art
 
@@ -121,7 +122,7 @@ The button index in `SDL_JOYBUTTONDOWN` is **not** the same as the kernel evtest
 | Gamepad D-pad | SDL2 `SDL_CONTROLLERBUTTONDOWN` events; navigates grid with auto-scroll |
 | Analog stick | SDL2 axis events; deadzone 16000/32767 (~50%); 250ms repeat |
 | Home button | Global `home_button=N` in `[launcher]` config; matches `SDL_JOYBUTTONDOWN` index; kills any running child |
-| MSPM0 I2C joystick | **Not yet integrated** — see `TODO` markers in `input.cpp`/`input.h` |
+| MSPM0 I2C gamepad | Kernel driver (`phyhandheld.c`) exposes as standard evdev gamepad; requires `SDL_GAMECONTROLLERCONFIG` mapping to be recognized as a GameController by SDL2 |
 
 When the grid has more than 6 apps (3 cols × 2 visible rows), additional rows scroll. D-pad/analog navigation calls `lv_obj_scroll_to_view()` to auto-scroll to off-screen cards.
 
@@ -140,15 +141,88 @@ phytec-launcher --input-debug
 ```
 
 This mode:
-1. Enumerates all SDL joystick devices at startup (name, GameController yes/no, button/axis/hat counts)
+1. Enumerates all SDL joystick devices at startup — prints name, GameController yes/no, **SDL2 GUID** (32-char hex), button/axis/hat counts, and existing mapping string (if GameController)
 2. Logs every button press, axis movement, hat change, and touch event in the main loop with the SDL event type and index
 3. Logs all events in the wait loop (while a child is running), marking home button matches with `*** MATCH — KILL ***`
 
-Use this to discover the correct `home_button=` index for any controller. The log file persists at `/tmp/phytec_launcher_input.log` for review after testing.
+Use this to:
+- Discover the correct `home_button=` index for any controller
+- Discover the SDL2 GUID needed for `SDL_GAMECONTROLLERCONFIG` mapping strings
+- Verify button/axis mapping for new or custom controllers
+
+The log file persists at `/tmp/phytec_launcher_input.log` for review after testing.
+
+Example startup output:
+```
+[input-debug]   [0] "PHYTEC Handheld One Gamepad"  GameController=NO  GUID=180000001234000032340000010000
+```
 
 ### Dual-API event deduplication
 
 GameController devices fire **both** `SDL_CONTROLLERBUTTONDOWN` (mapped enum indices) and `SDL_JOYBUTTONDOWN` (raw sequential indices) — with **different numbering**. To prevent duplicate events in the controller config screen, `main.cpp` checks `SDL_JoystickInstanceID()` against the GameController's underlying joystick and skips raw `SDL_JOY*` events for devices already handled as GameControllers.
+
+### MSPM0 I2C gamepad (kernel driver)
+
+The PHYTEC Handheld-One has an onboard TI MSPM0L1306 microcontroller that acts as an I2C slave, sending a raw GPIO button bitmap (16-bit) and 4 ADC axis values (16-bit each) to the AM62x SoC. The Linux kernel driver (`drivers/input/joystick/phyhandheld.c`) translates these I2C bytes into standard Linux input events on `/dev/input/eventX`.
+
+**Input event chain**: MSPM0 hardware → I2C bytes → kernel driver (`phyhandheld.c`) → `/dev/input/eventX` → SDL2 → launcher/RetroArch
+
+The driver is **not** in this repo — it lives in the kernel source tree. The launcher source repo only contains the userspace SDL2 code.
+
+#### Kernel driver design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| D-pad as `ABS_HAT0X`/`ABS_HAT0Y` axes | Industry standard — used by Xbox (xpad), PS4/PS5 (hid-playstation), Nintendo Pro (hid-nintendo), and generic HID gamepads. PS3 (hid-sony with `BTN_DPAD_*`) is the only major outlier. Hat axes are what SDL2 expects for D-pad-to-GameController button translation |
+| `BTN_MODE` for home button | Standard gamepad guide/home button (code `0x13c`). `KEY_HOME` (code 102) is a keyboard keycode in the 1–255 range — invisible to SDL2's joystick subsystem which only scans `BTN_*` codes (`0x100`+) |
+| VID `0x3432` / PID `0x0001` / version `0x0100` | Non-zero identity allows SDL2 to build a stable GUID for `SDL_GAMECONTROLLERCONFIG` mapping. Without VID/PID, SDL2 falls back to the device name for GUID construction which is fragile |
+| `BUS_I2C` bus type | Reflects the actual hardware bus; appears in the SDL2 GUID |
+
+#### Kernel driver button mapping
+
+```
+Scan code          → Linux keycode     → SDL2 role
+PHYHANDHELD_R_BUT  → BTN_TR            → Right trigger
+PHYHANDHELD_R_BUT1 → BTN_TL            → Left trigger
+PHYHANDHELD_BUT    → BTN_NORTH         → Y button
+PHYHANDHELD_BUT1   → BTN_EAST          → B button
+PHYHANDHELD_BUT2   → BTN_WEST          → X button
+PHYHANDHELD_BUT3   → BTN_SOUTH         → A button
+PHYHANDHELD_BUT4   → ABS_HAT0Y = +1    → D-pad Down
+PHYHANDHELD_BUT5   → ABS_HAT0X = +1    → D-pad Right
+PHYHANDHELD_BUT6   → ABS_HAT0Y = -1    → D-pad Up
+PHYHANDHELD_BUT7   → ABS_HAT0X = -1    → D-pad Left
+PHYHANDHELD_BUT8   → BTN_MODE          → Home/Guide button
+PHYHANDHELD_BUT9   → BTN_SELECT        → Select/Back
+PHYHANDHELD_BUT10  → BTN_START         → Start
+```
+
+#### Kernel driver axes
+
+| Register | Axis | Notes |
+|----------|------|-------|
+| `0x04` | `ABS_X` (left stick X) | 12-bit ADC, 0–4095 |
+| `0x05` | `ABS_Y` (left stick Y) | 12-bit ADC, 0–4095 |
+| `0x06` | `ABS_RX` (right stick X) | 12-bit ADC, 0–4095 |
+| `0x07` | `ABS_RY` (right stick Y) | 12-bit ADC, 0–4095 |
+| D-pad | `ABS_HAT0X`, `ABS_HAT0Y` | -1, 0, +1 (digital, from button bitmap) |
+
+#### Kernel driver source location
+
+```
+/path/to/kernel-source/drivers/input/joystick/phyhandheld.c
+```
+
+In the Yocto build tree:
+```
+am62x-meta-handheld-one/build/tmp-ampliphy/work-shared/phyboard-lyra-handheld-am62xx-3/kernel-source/drivers/input/joystick/phyhandheld.c
+```
+
+#### MSPM0 firmware
+
+Firmware source: https://github.com/phytec-labs/phytec-handheld-mspm0-driver
+
+The MSPM0 firmware is a separate concern from the kernel driver. Modifying the firmware changes what raw bytes are sent over I2C; modifying the kernel driver changes how those bytes are translated into Linux input events. For gamepad compatibility, **kernel driver changes are preferred** because they affect all applications at the `/dev/input/eventX` level.
 
 ---
 
@@ -205,25 +279,102 @@ Raw joystick devices always display numeric indices (no symbolic mapping).
 
 ---
 
+## SDL_GAMECONTROLLERCONFIG (MSPM0 mapping)
+
+For SDL2 to recognize the MSPM0 gamepad as a GameController (enabling named-button events like `SDL_CONTROLLER_BUTTON_A`, `SDL_CONTROLLER_BUTTON_DPAD_UP`, etc.), a mapping string must be provided via the `SDL_GAMECONTROLLERCONFIG` environment variable.
+
+### Why it's needed
+
+SDL2 maintains an internal database of known controllers (Xbox, PS4, PS5, Nintendo, etc.) keyed by GUID. The MSPM0 gamepad is a custom device not in this database. Without a mapping string, SDL2 opens it as a raw joystick only — the launcher's grid navigation and RetroArch's input system both ignore raw joystick events.
+
+### Mapping string format
+
+```
+<GUID>,<device name>,<button mappings>,platform:Linux,
+```
+
+Example (button indices must be verified on-device):
+```
+180000001234000032340000010000,PHYTEC Handheld One Gamepad,a:b5,b:b3,x:b4,y:b2,back:b7,guide:b6,start:b8,leftshoulder:b1,rightshoulder:b0,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,leftx:a0,lefty:a1,rightx:a2,righty:a3,platform:Linux,
+```
+
+| Token | Meaning |
+|-------|---------|
+| `<GUID>` | 32-char hex string built by SDL2 from bus type, device name CRC, VID, PID, version. Discover via `--input-debug` |
+| `a:b5` | SDL GameController button A → raw joystick button index 5 |
+| `dpup:h0.1` | D-pad up → hat 0, bit 1. Maps to `ABS_HAT0Y = -1` from the kernel driver |
+| `h0.1`/`.2`/`.4`/`.8` | Hat bitmask: 1=up, 2=right, 4=down, 8=left |
+| `leftx:a0` | Left stick X → raw axis 0 |
+
+### Where it's set
+
+The env var is set in `phytec-launcher-start.sh` (the systemd startup wrapper). Since the launcher `fork()/execv()`s child processes (RetroArch, games), all children inherit the variable.
+
+```bash
+export SDL_GAMECONTROLLERCONFIG="<GUID>,PHYTEC Handheld One Gamepad,..."
+```
+
+### Setup procedure
+
+1. Flash the updated kernel with the `phyhandheld.c` driver changes (ABS_HAT0X/Y, BTN_MODE, VID/PID)
+2. Run `phytec-handheld-launcher --input-debug` on the device
+3. Copy the GUID from the startup enumeration log
+4. Press each button and note the raw joystick index (`SDL_JOYBUTTONDOWN button=N`)
+5. Build the mapping string and uncomment/update the line in `phytec-launcher-start.sh`
+
+### Scope
+
+| Application | Input driver | Needs `SDL_GAMECONTROLLERCONFIG`? |
+|-------------|-------------|----------------------------------|
+| Launcher | SDL2 GameController | Yes — required for D-pad navigation and named button events |
+| RetroArch (sdl2 input) | SDL2 GameController | Yes — inherits env var from launcher |
+| RetroArch (udev input) | evdev direct | No — reads `/dev/input/eventX` directly; kernel driver changes are sufficient |
+| Any SDL2 game | SDL2 GameController | Yes — inherits env var from launcher |
+| Non-SDL2 apps | evdev / other | No — kernel driver provides standard evdev capabilities |
+
+---
+
 ## Yocto Integration
 
 ### Recipe structure (in the meta layer, not this repo)
+
+Meta layer root: `am62x-meta-handheld-one/sources/meta-handheld-one/`
 
 ```
 recipes-graphics/
   lvgl/
     lvgl_9.1.0.bbappend         # FS_POSIX, libpng, system malloc, fonts, cache
+  wayland/
+    weston-init.bbappend         # Weston config: DSI-1, 90° rotation, XWayland
   phytec-launcher/
-    phytec-launcher_1.0.bb       # Main recipe; sets LAUNCHER_COVERS; requires covers.inc
+    phytec-launcher_1.0.bb       # Main recipe; RDEPENDS retroarch, mpv; requires covers.inc
     covers.inc                   # do_install:append for cover art PNGs
     files/
-      launcher.conf              # Deployed config with icon= paths
-      phytec-launcher.service    # systemd unit
-      phytec-launcher-start.sh   # Startup wrapper
-      covers/
-        supertuxkart.png         # Cover images (layer-specific)
+      launcher.conf              # Deployed config with icon= paths (6 games)
+      phytec-launcher.service    # systemd unit (After=weston.service)
+      phytec-launcher-start.sh   # Startup wrapper (env vars + SDL_GAMECONTROLLERCONFIG)
+      retroarch.cfg              # Minimal RetroArch config → /etc/retroarch/retroarch.cfg
+      covers/                    # Cover images (layer-specific)
+        supertuxkart.png
         neverball.png
+        neverputt.png
+        3d-som-viewer.png
+        glmark2.png
+        retroarch.png
+        freedoom1.png
+        freedoom2.png
+        how-we-built-this.png
 ```
+
+### Startup wrapper (`phytec-launcher-start.sh`)
+
+The startup script launched by the systemd unit:
+1. Waits up to 30s for the Weston socket at `/run/wayland-0`
+2. Exports `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR`
+3. Exports `SDL_GAMECONTROLLERCONFIG` for the MSPM0 gamepad mapping (must be configured with the device's GUID after flashing — see [SDL_GAMECONTROLLERCONFIG section](#sdl_gamecontrollerconfig-mspm0-mapping))
+4. Execs the launcher binary
+
+Since the launcher `fork()/execv()`s child apps, all env vars are inherited by RetroArch, games, etc.
 
 ### Adding a new cover
 
@@ -240,6 +391,8 @@ recipes-graphics/
 - No automated tests — manual integration testing against a real Weston session
 - Keyboard navigation (arrow keys + Enter) is described in README but not fully integrated
 - The `lv_conf.h` pragma warning ("Possible failure to include lv_conf.h") appears if `-I${STAGING_INCDIR}/lvgl` is missing from the compile flags
+- **MSPM0 SDL_GAMECONTROLLERCONFIG GUID**: Must be discovered on-device after flashing updated kernel driver (run `--input-debug`); the mapping string in `phytec-launcher-start.sh` is currently commented out with a placeholder
+- **MSPM0 left joystick Y-axis**: Intermittent issue with up/down not being detected — suspected MSPM0 firmware ADC channel or I2C transmit buffer issue, not a kernel driver problem. Verify with `evtest` on-device
 
 ---
 

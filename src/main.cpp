@@ -136,9 +136,15 @@ int main(int argc, char **argv)
         input_debug_log("[input-debug] SDL sees %d joystick device(s):\n", n);
         for (int i = 0; i < n; i++) {
             bool is_gc = SDL_IsGameController(i);
-            input_debug_log("[input-debug]   [%d] \"%s\"  GameController=%s\n",
-                            i, SDL_JoystickNameForIndex(i),
-                            is_gc ? "YES" : "NO");
+            /* Print GUID for every device so we can build mapping strings */
+            {
+                SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(i);
+                char guid_str[64];
+                SDL_JoystickGetGUIDString(guid, guid_str, sizeof(guid_str));
+                input_debug_log("[input-debug]   [%d] \"%s\"  GameController=%s  GUID=%s\n",
+                                i, SDL_JoystickNameForIndex(i),
+                                is_gc ? "YES" : "NO", guid_str);
+            }
             if (is_gc) {
                 SDL_GameController *gc = SDL_GameControllerFromInstanceID(
                     SDL_JoystickGetDeviceInstanceID(i));
