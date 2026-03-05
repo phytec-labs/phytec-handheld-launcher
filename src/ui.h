@@ -6,7 +6,7 @@
 /* Layout constants shared across files */
 #define COLS      3
 #define ROWS      2
-#define HEADER_H  54
+#define HEADER_H  100
 #define PAD       20
 #define GAP       24
 

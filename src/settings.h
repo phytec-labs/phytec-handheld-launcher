@@ -28,3 +28,7 @@ void settings_handle_button(SDL_GameControllerButton btn);
 void controller_cfg_on_joy_button(int button, bool pressed);
 void controller_cfg_on_axis(int axis, int16_t value);
 void controller_cfg_on_hat(int hat, int value);
+
+/* Log a raw event string to the controller config event log (for GC devices
+ * where raw SDL_JOY* events are otherwise skipped by deduplication) */
+void controller_cfg_log_raw_event(const char *fmt, ...);

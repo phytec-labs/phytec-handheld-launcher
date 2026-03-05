@@ -273,39 +273,67 @@ int main(int argc, char **argv)
                 case SDL_JOYBUTTONDOWN:
                     input_debug_log("[input-debug] JOYBUTTONDOWN         button=%d  joystick=%d\n",
                                     ev.jbutton.button, ev.jbutton.which);
-                    /* Skip raw joy events for GameController devices —
-                     * they already fire SDL_CONTROLLERBUTTONDOWN with
-                     * different (mapped) indices, causing duplicates. */
-                    if (controller_cfg_active &&
-                        !(sdl_gamepad && SDL_JoystickInstanceID(
-                            SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jbutton.which))
-                        controller_cfg_on_joy_button(ev.jbutton.button, true);
+                    if (controller_cfg_active) {
+                        if (sdl_gamepad && SDL_JoystickInstanceID(
+                                SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jbutton.which) {
+                            /* GC device: log raw event (visuals handled by GC events) */
+                            controller_cfg_log_raw_event("RAW BTN %d %s",
+                                ev.jbutton.button, "DOWN");
+                        } else {
+                            controller_cfg_on_joy_button(ev.jbutton.button, true);
+                        }
+                    }
                     break;
                 case SDL_JOYBUTTONUP:
                     input_debug_log("[input-debug] JOYBUTTONUP           button=%d  joystick=%d\n",
                                     ev.jbutton.button, ev.jbutton.which);
-                    if (controller_cfg_active &&
-                        !(sdl_gamepad && SDL_JoystickInstanceID(
-                            SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jbutton.which))
-                        controller_cfg_on_joy_button(ev.jbutton.button, false);
+                    if (controller_cfg_active) {
+                        if (sdl_gamepad && SDL_JoystickInstanceID(
+                                SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jbutton.which) {
+                            controller_cfg_log_raw_event("RAW BTN %d %s",
+                                ev.jbutton.button, "UP");
+                        } else {
+                            controller_cfg_on_joy_button(ev.jbutton.button, false);
+                        }
+                    }
                     break;
                 case SDL_JOYAXISMOTION:
                     if (ev.jaxis.value > AXIS_DEADZONE ||
                         ev.jaxis.value < -AXIS_DEADZONE)
                         input_debug_log("[input-debug] JOYAXIS               axis=%d  value=%d  joystick=%d\n",
                                         ev.jaxis.axis, ev.jaxis.value, ev.jaxis.which);
-                    if (controller_cfg_active &&
-                        !(sdl_gamepad && SDL_JoystickInstanceID(
-                            SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jaxis.which))
-                        controller_cfg_on_axis(ev.jaxis.axis, ev.jaxis.value);
+                    if (controller_cfg_active) {
+                        if (sdl_gamepad && SDL_JoystickInstanceID(
+                                SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jaxis.which) {
+                            int abs_v = (ev.jaxis.value < 0) ? -ev.jaxis.value : ev.jaxis.value;
+                            if (abs_v > AXIS_DEADZONE)
+                                controller_cfg_log_raw_event("RAW AXIS %d: %d",
+                                    ev.jaxis.axis, ev.jaxis.value);
+                        } else {
+                            controller_cfg_on_axis(ev.jaxis.axis, ev.jaxis.value);
+                        }
+                    }
                     break;
                 case SDL_JOYHATMOTION:
                     input_debug_log("[input-debug] JOYHAT                hat=%d  value=%d  joystick=%d\n",
                                     ev.jhat.hat, ev.jhat.value, ev.jhat.which);
-                    if (controller_cfg_active &&
-                        !(sdl_gamepad && SDL_JoystickInstanceID(
-                            SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jhat.which))
-                        controller_cfg_on_hat(ev.jhat.hat, ev.jhat.value);
+                    if (controller_cfg_active) {
+                        if (sdl_gamepad && SDL_JoystickInstanceID(
+                                SDL_GameControllerGetJoystick(sdl_gamepad)) == ev.jhat.which) {
+                            const char *hdir = "CENTER";
+                            switch (ev.jhat.value) {
+                                case SDL_HAT_UP:    hdir = "UP"; break;
+                                case SDL_HAT_DOWN:  hdir = "DOWN"; break;
+                                case SDL_HAT_LEFT:  hdir = "LEFT"; break;
+                                case SDL_HAT_RIGHT: hdir = "RIGHT"; break;
+                                default:            hdir = "CENTER"; break;
+                            }
+                            controller_cfg_log_raw_event("RAW HAT %d: %s",
+                                ev.jhat.hat, hdir);
+                        } else {
+                            controller_cfg_on_hat(ev.jhat.hat, ev.jhat.value);
+                        }
+                    }
                     break;
                 case SDL_MOUSEBUTTONDOWN:
                     input_debug_log("[input-debug] MOUSEBUTTONDOWN       x=%d y=%d button=%d\n",

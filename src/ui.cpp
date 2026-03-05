@@ -58,23 +58,23 @@ void show_results(const char *app_name, const char *output)
     snprintf(title_buf, sizeof(title_buf), "%s — Results", app_name);
     lv_label_set_text(title, title_buf);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_42, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t *hint = lv_label_create(overlay);
     lv_label_set_text(hint, "A: Close");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_42, 0);
     lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     lv_obj_t *ta = lv_textarea_create(overlay);
-    lv_obj_set_size(ta, win_w - PAD * 2, win_h - HEADER_H - PAD * 3 - 50);
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 30);
+    lv_obj_set_size(ta, win_w - PAD * 2, win_h - PAD * 2 - 60 - 80);
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 60);
     lv_obj_set_style_bg_color(ta, lv_color_hex(COL_HEADER), 0);
     lv_obj_set_style_border_color(ta, lv_color_hex(COL_CARD_BORDER), 0);
     lv_obj_set_style_border_width(ta, 1, 0);
     lv_obj_set_style_text_color(ta, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(ta, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(ta, &lv_font_montserrat_42, 0);
     lv_obj_set_style_radius(ta, 8, 0);
     lv_textarea_set_text(ta, output && output[0] ? output : "(no output captured)");
     lv_textarea_set_cursor_click_pos(ta, false);
@@ -82,7 +82,7 @@ void show_results(const char *app_name, const char *output)
 
     /* Close button — highlighted to show it has focus */
     lv_obj_t *btn = lv_button_create(overlay);
-    lv_obj_set_size(btn, 160, 44);
+    lv_obj_set_size(btn, 280, 72);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
@@ -96,7 +96,7 @@ void show_results(const char *app_name, const char *output)
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "Back to Launcher");
     lv_obj_set_style_text_color(btn_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_42, 0);
     lv_obj_center(btn_lbl);
 
     lv_timer_handler();
@@ -167,18 +167,18 @@ void build_ui()
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text(title, "PHYTEC Handheld-One");
     lv_obj_set_style_text_color(title, lv_color_hex(COL_ACCENT), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *hint = lv_label_create(header);
     lv_label_set_text(hint, "D-Pad: Navigate     A: Launch");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -50, 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_42, 0);
+    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -60, 0);
 
     /* Gear icon — opens Settings */
     lv_obj_t *gear_btn = lv_button_create(header);
-    lv_obj_set_size(gear_btn, 44, 36);
+    lv_obj_set_size(gear_btn, 64, 56);
     lv_obj_align(gear_btn, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_opa(gear_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(gear_btn, 0, 0);
@@ -191,7 +191,7 @@ void build_ui()
     lv_obj_t *gear_lbl = lv_label_create(gear_btn);
     lv_label_set_text(gear_lbl, LV_SYMBOL_SETTINGS);
     lv_obj_set_style_text_color(gear_lbl, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(gear_lbl, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(gear_lbl, &lv_font_montserrat_48, 0);
     lv_obj_center(gear_lbl);
 
     for (int i = 0; i < num_games; i++) {
@@ -243,8 +243,8 @@ void build_ui()
             lv_obj_center(img);
 
             /* Semi-transparent name strip (scales with card height) */
-            int32_t strip_h = CARD_H / 6;
-            if (strip_h < 28) strip_h = 28;
+            int32_t strip_h = CARD_H / 4;
+            if (strip_h < 70) strip_h = 70;
 
             lv_obj_t *name_bg = lv_obj_create(card);
             lv_obj_set_size(name_bg, CARD_W, strip_h);
@@ -261,7 +261,7 @@ void build_ui()
             lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
             lv_obj_set_width(name_lbl, CARD_W - 8);
             lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
-            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_42, 0);
             lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
         } else {
@@ -271,7 +271,7 @@ void build_ui()
             lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_WRAP);
             lv_obj_set_width(name_lbl, CARD_W - 24);
             lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
-            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_42, 0);
             lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 0);
         }

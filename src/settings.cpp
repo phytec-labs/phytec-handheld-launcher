@@ -56,6 +56,11 @@ static const char *gc_labels[] = {
 };
 static const int n_gc_labels = (int)(sizeof(gc_labels) / sizeof(gc_labels[0]));
 
+static const char *gc_axis_labels[] = {
+    "LX", "LY", "LT", "RX", "RY", "RT"  /* SDL_CONTROLLER_AXIS_* */
+};
+static const int n_gc_axis_labels = (int)(sizeof(gc_axis_labels) / sizeof(gc_axis_labels[0]));
+
 static void refresh_button_labels()
 {
     for (int i = 0; i < ds.num_buttons; i++) {
@@ -151,20 +156,20 @@ void open_settings_menu()
     lv_obj_t *title = lv_label_create(ov);
     lv_label_set_text(title, LV_SYMBOL_SETTINGS "  Settings");
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     /* Hint */
     lv_obj_t *hint = lv_label_create(ov);
     lv_label_set_text(hint, "B: Back");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 4);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_42, 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 8);
 
     /* ── Menu item: Controller Configuration ───────────────── */
     int item_w = win_w - PAD * 4;
-    int item_h = 60;
-    int item_y = 60;
+    int item_h = 120;
+    int item_y = 140;
 
     lv_obj_t *item = lv_obj_create(ov);
     lv_obj_set_size(item, item_w, item_h);
@@ -184,18 +189,18 @@ void open_settings_menu()
     lv_obj_t *item_lbl = lv_label_create(item);
     lv_label_set_text(item_lbl, LV_SYMBOL_USB "  Controller Configuration");
     lv_obj_set_style_text_color(item_lbl, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(item_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(item_lbl, &lv_font_montserrat_42, 0);
     lv_obj_align(item_lbl, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *arrow_lbl = lv_label_create(item);
     lv_label_set_text(arrow_lbl, LV_SYMBOL_RIGHT);
     lv_obj_set_style_text_color(arrow_lbl, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(arrow_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(arrow_lbl, &lv_font_montserrat_42, 0);
     lv_obj_align(arrow_lbl, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* ── Back button (bottom-right, matches results overlay) ── */
     lv_obj_t *btn = lv_button_create(ov);
-    lv_obj_set_size(btn, 160, 44);
+    lv_obj_set_size(btn, 280, 72);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
@@ -209,7 +214,7 @@ void open_settings_menu()
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "Back to Launcher");
     lv_obj_set_style_text_color(btn_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_42, 0);
     lv_obj_center(btn_lbl);
 
     lv_timer_handler();
@@ -241,6 +246,7 @@ void open_controller_config()
 
     /* ── Query device info ───────────────────────────────────── */
     char   dev_name[256] = "No controller detected";
+    char   guid_str[64]  = "N/A";
     bool   is_gc         = false;
     int    num_btns      = 0;
     int    num_axes      = 0;
@@ -254,6 +260,9 @@ void open_controller_config()
         num_btns = SDL_JoystickNumButtons(joy);
         num_axes = SDL_JoystickNumAxes(joy);
         num_hats = SDL_JoystickNumHats(joy);
+
+        SDL_JoystickGUID guid = SDL_JoystickGetGUID(joy);
+        SDL_JoystickGetGUIDString(guid, guid_str, sizeof(guid_str));
 
         /* GameController API maps D-pad hat to virtual buttons 11-14
          * (DPAD_UP/DOWN/LEFT/RIGHT).  These are beyond the raw
@@ -272,6 +281,10 @@ void open_controller_config()
                     num_btns = SDL_JoystickNumButtons(cfg_joystick);
                     num_axes = SDL_JoystickNumAxes(cfg_joystick);
                     num_hats = SDL_JoystickNumHats(cfg_joystick);
+
+                    SDL_JoystickGUID guid = SDL_JoystickGetGUID(cfg_joystick);
+                    SDL_JoystickGetGUIDString(guid, guid_str, sizeof(guid_str));
+
                     printf("Controller config: opened raw joystick \"%s\"\n",
                            dev_name);
                     break;
@@ -287,7 +300,7 @@ void open_controller_config()
     ds.num_hats            = num_hats;
     ds.is_game_controller  = is_gc;
 
-    /* ── Build overlay ───────────────────────────────────────── */
+    /* ── Build scrollable overlay ────────────────────────────── */
     lv_obj_t *scr = lv_screen_active();
     controller_cfg_overlay = lv_obj_create(scr);
     lv_obj_t *ov = controller_cfg_overlay;
@@ -299,43 +312,44 @@ void open_controller_config()
     lv_obj_set_style_border_width(ov, 0, 0);
     lv_obj_set_style_radius(ov, 0, 0);
     lv_obj_set_style_pad_all(ov, PAD, 0);
-    lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+    /* Scrollable — content extends beyond viewport with large fonts */
 
     /* ── Header ──────────────────────────────────────────────── */
     lv_obj_t *title = lv_label_create(ov);
-    lv_label_set_text(title, LV_SYMBOL_USB "  Controller Configuration");
+    lv_label_set_text(title, LV_SYMBOL_USB "  Controller Config");
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
+    lv_obj_set_pos(title, PAD, 0);
 
     lv_obj_t *hint = lv_label_create(ov);
     lv_label_set_text(hint, "Select: Back");
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 4);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_42, 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 8);
 
-    /* ── Device info ─────────────────────────────────────────── */
-    int info_y = 36;
+    /* ── Device info with GUID ───────────────────────────────── */
+    int info_y = 70;
+    int content_w = win_w - PAD * 2;
 
     lv_obj_t *dev_lbl = lv_label_create(ov);
-    char info_buf[512];
+    char info_buf[640];
     snprintf(info_buf, sizeof(info_buf),
-             "Device: %s\n"
-             "Type: %s  |  Buttons: %d  Axes: %d  Hats: %d",
+             "%s\n"
+             "%s | Btns:%d Axes:%d Hats:%d\n"
+             "GUID: %s",
              dev_name,
              is_gc ? "GameController" : "Raw Joystick",
-             num_btns, num_axes, num_hats);
+             num_btns, num_axes, num_hats,
+             guid_str);
     lv_label_set_text(dev_lbl, info_buf);
+    lv_obj_set_width(dev_lbl, content_w);
     lv_obj_set_style_text_color(dev_lbl, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(dev_lbl, &lv_font_montserrat_14, 0);
-    lv_obj_align(dev_lbl, LV_ALIGN_TOP_LEFT, 0, info_y);
+    lv_obj_set_style_text_font(dev_lbl, &lv_font_montserrat_42, 0);
+    lv_obj_set_pos(dev_lbl, PAD, info_y);
 
     /* ── Layout calculations ─────────────────────────────────── */
-    int content_y   = info_y + 56;
-    int content_w   = win_w - PAD * 2;
-    int log_h       = win_h / 5;
-    int back_btn_h  = 44;
-    int main_h      = win_h - PAD * 2 - content_y - log_h - back_btn_h - PAD * 2;
+    int content_y   = info_y + 160;  /* 3 lines of ~48px each + gap */
+    int back_btn_h  = 72;
 
     int btn_panel_w = content_w * 45 / 100;
     int axis_panel_w = content_w * 50 / 100;
@@ -346,14 +360,14 @@ void open_controller_config()
         lv_obj_t *btn_title = lv_label_create(ov);
         lv_label_set_text(btn_title, "Buttons");
         lv_obj_set_style_text_color(btn_title, lv_color_hex(COL_TEXT), 0);
-        lv_obj_set_style_text_font(btn_title, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(btn_title, &lv_font_montserrat_42, 0);
         lv_obj_set_pos(btn_title, PAD, content_y);
 
         /* Index / Symbols toggle (only meaningful for GameController) */
         if (is_gc) {
             lv_obj_t *tog = lv_button_create(ov);
-            lv_obj_set_size(tog, 110, 24);
-            lv_obj_set_pos(tog, PAD + 80, content_y - 3);
+            lv_obj_set_size(tog, 240, 48);
+            lv_obj_set_pos(tog, PAD + 220, content_y - 3);
             lv_obj_set_style_bg_color(tog, lv_color_hex(COL_CARD), 0);
             lv_obj_set_style_bg_opa(tog, LV_OPA_COVER, 0);
             lv_obj_set_style_border_width(tog, 1, 0);
@@ -367,14 +381,23 @@ void open_controller_config()
             lv_label_set_text(tog_lbl, show_symbols ? LV_SYMBOL_LOOP " Index"
                                                     : LV_SYMBOL_LOOP " Symbols");
             lv_obj_set_style_text_color(tog_lbl, lv_color_hex(COL_SUBTEXT), 0);
-            lv_obj_set_style_text_font(tog_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(tog_lbl, &lv_font_montserrat_42, 0);
             lv_obj_center(tog_lbl);
             ds.toggle_label = tog_lbl;
         }
 
+        const int BTN_COLS = 6;
+        const int BTN_GAP  = 10;
+        int avail_w = btn_panel_w - 24;
+        int btn_sz  = (avail_w - BTN_GAP * (BTN_COLS - 1)) / BTN_COLS;
+        if (btn_sz > 70) btn_sz = 70;
+        if (btn_sz < 48) btn_sz = 48;
+        int btn_rows = (num_btns + BTN_COLS - 1) / BTN_COLS;
+        int btn_panel_h = btn_rows * (btn_sz + BTN_GAP) + 24;
+
         lv_obj_t *btn_panel = lv_obj_create(ov);
-        lv_obj_set_pos(btn_panel, PAD, content_y + 22);
-        lv_obj_set_size(btn_panel, btn_panel_w, main_h - 22);
+        lv_obj_set_pos(btn_panel, PAD, content_y + 52);
+        lv_obj_set_size(btn_panel, btn_panel_w, btn_panel_h);
         lv_obj_set_style_bg_color(btn_panel, lv_color_hex(COL_HEADER), 0);
         lv_obj_set_style_bg_opa(btn_panel, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(btn_panel, 1, 0);
@@ -382,13 +405,6 @@ void open_controller_config()
         lv_obj_set_style_radius(btn_panel, 8, 0);
         lv_obj_set_style_pad_all(btn_panel, 12, 0);
         lv_obj_clear_flag(btn_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-        const int BTN_COLS = 6;
-        const int BTN_GAP  = 8;
-        int avail_w = btn_panel_w - 24; /* minus padding */
-        int btn_sz  = (avail_w - BTN_GAP * (BTN_COLS - 1)) / BTN_COLS;
-        if (btn_sz > 50) btn_sz = 50;
-        if (btn_sz < 32) btn_sz = 32;
 
         for (int i = 0; i < num_btns; i++) {
             int col = i % BTN_COLS;
@@ -408,16 +424,15 @@ void open_controller_config()
             lv_obj_clear_flag(ind, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
             lv_obj_t *lbl = lv_label_create(ind);
-            lv_label_set_text(lbl, "");   /* filled by refresh_button_labels() */
+            lv_label_set_text(lbl, "");
             lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
-            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_42, 0);
             lv_obj_center(lbl);
 
             ds.button_indicators[i] = ind;
             ds.button_labels[i]     = lbl;
         }
 
-        /* Apply current label mode (Index vs Symbols) */
         refresh_button_labels();
     }
 
@@ -426,12 +441,19 @@ void open_controller_config()
         lv_obj_t *axis_title = lv_label_create(ov);
         lv_label_set_text(axis_title, "Axes");
         lv_obj_set_style_text_color(axis_title, lv_color_hex(COL_TEXT), 0);
-        lv_obj_set_style_text_font(axis_title, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(axis_title, &lv_font_montserrat_42, 0);
         lv_obj_set_pos(axis_title, PAD + axis_panel_x, content_y);
 
+        const int AXIS_ROW_H  = 54;
+        const int LABEL_W     = 120;
+        int bar_w = axis_panel_w - 24 - LABEL_W - 120;
+        if (bar_w < 80) bar_w = 80;
+        const int BAR_H = 30;
+        int axis_panel_h = num_axes * AXIS_ROW_H + 24;
+
         lv_obj_t *axis_panel = lv_obj_create(ov);
-        lv_obj_set_pos(axis_panel, PAD + axis_panel_x, content_y + 22);
-        lv_obj_set_size(axis_panel, axis_panel_w, main_h - 22);
+        lv_obj_set_pos(axis_panel, PAD + axis_panel_x, content_y + 52);
+        lv_obj_set_size(axis_panel, axis_panel_w, axis_panel_h);
         lv_obj_set_style_bg_color(axis_panel, lv_color_hex(COL_HEADER), 0);
         lv_obj_set_style_bg_opa(axis_panel, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(axis_panel, 1, 0);
@@ -440,25 +462,17 @@ void open_controller_config()
         lv_obj_set_style_pad_all(axis_panel, 12, 0);
         lv_obj_clear_flag(axis_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-        const int AXIS_ROW_H  = 30;
-        const int LABEL_W     = 70;
-        int bar_w = axis_panel_w - 24 - LABEL_W - 70; /* padding, label, value */
-        if (bar_w < 80) bar_w = 80;
-        const int BAR_H = 20;
-
         for (int i = 0; i < num_axes; i++) {
             int y_off = i * AXIS_ROW_H;
 
-            /* Axis label */
             lv_obj_t *a_lbl = lv_label_create(axis_panel);
             char axis_name[32];
             snprintf(axis_name, sizeof(axis_name), "Axis %d:", i);
             lv_label_set_text(a_lbl, axis_name);
-            lv_obj_set_pos(a_lbl, 0, y_off + 2);
+            lv_obj_set_pos(a_lbl, 0, y_off + 4);
             lv_obj_set_style_text_color(a_lbl, lv_color_hex(COL_SUBTEXT), 0);
-            lv_obj_set_style_text_font(a_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(a_lbl, &lv_font_montserrat_42, 0);
 
-            /* Bar background (track) */
             lv_obj_t *bar_bg = lv_obj_create(axis_panel);
             lv_obj_set_pos(bar_bg, LABEL_W, y_off);
             lv_obj_set_size(bar_bg, bar_w, BAR_H);
@@ -470,10 +484,9 @@ void open_controller_config()
             lv_obj_set_style_pad_all(bar_bg, 0, 0);
             lv_obj_clear_flag(bar_bg, LV_OBJ_FLAG_SCROLLABLE);
 
-            /* Bar indicator (thin vertical bar that slides) */
             lv_obj_t *bar_ind = lv_obj_create(bar_bg);
-            lv_obj_set_size(bar_ind, 4, BAR_H - 4);
-            lv_obj_set_pos(bar_ind, bar_w / 2 - 2, 2); /* centered = zero */
+            lv_obj_set_size(bar_ind, 6, BAR_H - 4);
+            lv_obj_set_pos(bar_ind, bar_w / 2 - 3, 2);
             lv_obj_set_style_bg_color(bar_ind, lv_color_hex(COL_SUBTEXT), 0);
             lv_obj_set_style_bg_opa(bar_ind, LV_OPA_COVER, 0);
             lv_obj_set_style_border_width(bar_ind, 0, 0);
@@ -482,28 +495,32 @@ void open_controller_config()
 
             ds.axis_bars[i] = bar_ind;
 
-            /* Numeric value */
             lv_obj_t *val_lbl = lv_label_create(axis_panel);
             lv_label_set_text(val_lbl, "0");
-            lv_obj_set_pos(val_lbl, LABEL_W + bar_w + 8, y_off + 2);
+            lv_obj_set_pos(val_lbl, LABEL_W + bar_w + 8, y_off + 4);
             lv_obj_set_style_text_color(val_lbl, lv_color_hex(COL_TEXT), 0);
-            lv_obj_set_style_text_font(val_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_font(val_lbl, &lv_font_montserrat_42, 0);
 
             ds.axis_value_labels[i] = val_lbl;
         }
     }
 
-    /* ── Event log ───────────────────────────────────────────── */
-    int log_y = win_h - PAD - back_btn_h - PAD - log_h;
+    /* ── Event log (scrollable) ──────────────────────────────── */
+    /* Position below buttons/axes — use the taller of the two panels */
+    int btn_rows = (num_btns + 5) / 6;
+    int btn_panel_total = (num_btns > 0) ? content_y + 52 + btn_rows * 80 + 24 : content_y;
+    int axis_panel_total = (num_axes > 0) ? content_y + 52 + num_axes * 54 + 24 : content_y;
+    int log_y = ((btn_panel_total > axis_panel_total) ? btn_panel_total : axis_panel_total) + 20;
+    int log_h = win_h / 4;
 
     lv_obj_t *log_title = lv_label_create(ov);
-    lv_label_set_text(log_title, "Recent Events");
+    lv_label_set_text(log_title, "Raw Events");
     lv_obj_set_style_text_color(log_title, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_text_font(log_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_pos(log_title, PAD, log_y - 20);
+    lv_obj_set_style_text_font(log_title, &lv_font_montserrat_42, 0);
+    lv_obj_set_pos(log_title, PAD, log_y);
 
     lv_obj_t *log_box = lv_obj_create(ov);
-    lv_obj_set_pos(log_box, PAD, log_y);
+    lv_obj_set_pos(log_box, PAD, log_y + 50);
     lv_obj_set_size(log_box, content_w, log_h);
     lv_obj_set_style_bg_color(log_box, lv_color_hex(COL_HEADER), 0);
     lv_obj_set_style_bg_opa(log_box, LV_OPA_COVER, 0);
@@ -511,19 +528,19 @@ void open_controller_config()
     lv_obj_set_style_border_color(log_box, lv_color_hex(COL_CARD_BORDER), 0);
     lv_obj_set_style_radius(log_box, 8, 0);
     lv_obj_set_style_pad_all(log_box, 8, 0);
-    lv_obj_clear_flag(log_box, LV_OBJ_FLAG_SCROLLABLE);
+    /* Log box is scrollable so long event history is accessible */
 
     ds.event_log_label = lv_label_create(log_box);
     lv_label_set_text(ds.event_log_label, "Press buttons or move axes...");
     lv_obj_set_width(ds.event_log_label, content_w - 16);
     lv_obj_set_style_text_color(ds.event_log_label, lv_color_hex(COL_SUBTEXT), 0);
-    lv_obj_set_style_text_font(ds.event_log_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(ds.event_log_label, &lv_font_montserrat_42, 0);
     lv_obj_align(ds.event_log_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     /* ── Back button ─────────────────────────────────────────── */
     lv_obj_t *btn = lv_button_create(ov);
-    lv_obj_set_size(btn, 160, back_btn_h);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_size(btn, 280, back_btn_h);
+    lv_obj_set_pos(btn, content_w - 280 + PAD, log_y + 50 + log_h + PAD);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_set_style_border_width(btn, 3, 0);
@@ -536,12 +553,12 @@ void open_controller_config()
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "Back");
     lv_obj_set_style_text_color(btn_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_42, 0);
     lv_obj_center(btn_lbl);
 
     lv_timer_handler();
-    printf("Controller config opened: \"%s\" (%d btns, %d axes, %d hats)\n",
-           dev_name, num_btns, num_axes, num_hats);
+    printf("Controller config opened: \"%s\" GUID=%s (%d btns, %d axes, %d hats)\n",
+           dev_name, guid_str, num_btns, num_axes, num_hats);
 }
 
 void close_controller_config()
@@ -616,7 +633,12 @@ void controller_cfg_on_joy_button(int button, bool pressed)
     }
 
     /* Always log, even for buttons beyond the visual grid */
-    append_event_log("Button %d %s", button, pressed ? "PRESSED" : "RELEASED");
+    if (ds.is_game_controller && button < n_gc_labels) {
+        append_event_log("GC BTN %d %s  [%s]", button,
+                         pressed ? "DOWN" : "UP", gc_labels[button]);
+    } else {
+        append_event_log("BTN %d %s", button, pressed ? "DOWN" : "UP");
+    }
 }
 
 void controller_cfg_on_axis(int axis, int16_t value)
@@ -650,7 +672,12 @@ void controller_cfg_on_axis(int axis, int16_t value)
 
     /* Only log significant movements to avoid flooding */
     if (abs_val > AXIS_DEADZONE) {
-        append_event_log("Axis %d: %d", axis, value);
+        if (ds.is_game_controller && axis < n_gc_axis_labels) {
+            append_event_log("GC AXIS %d: %d  [%s]", axis, value,
+                             gc_axis_labels[axis]);
+        } else {
+            append_event_log("AXIS %d: %d", axis, value);
+        }
     }
 }
 
@@ -669,4 +696,16 @@ void controller_cfg_on_hat(int hat, int value)
         default:                dir = "CENTER";     break;
     }
     append_event_log("Hat %d: %s", hat, dir);
+}
+
+/* ── Raw event logging for external callers (main.cpp) ───────── */
+
+void controller_cfg_log_raw_event(const char *fmt, ...)
+{
+    char buf[128];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    append_event_log("%s", buf);
 }

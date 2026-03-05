@@ -353,7 +353,9 @@ recipes-graphics/
       launcher.conf              # Deployed config with icon= paths (6 games)
       phytec-launcher.service    # systemd unit (After=weston.service)
       phytec-launcher-start.sh   # Startup wrapper (env vars + SDL_GAMECONTROLLERCONFIG)
-      retroarch.cfg              # Minimal RetroArch config → /etc/retroarch/retroarch.cfg
+      retroarch.cfg              # RetroArch config → /etc/retroarch/retroarch.cfg
+      PHYTEC-Handheld-One-Gamepad.cfg       # RetroArch SDL2 autoconfig → /usr/share/retroarch/autoconfig/sdl2/
+      PHYTEC-Handheld-One-Gamepad-udev.cfg  # RetroArch udev autoconfig → /usr/share/retroarch/autoconfig/udev/
       covers/                    # Cover images (layer-specific)
         supertuxkart.png
         neverball.png
@@ -376,6 +378,26 @@ The startup script launched by the systemd unit:
 
 Since the launcher `fork()/execv()`s child apps, all env vars are inherited by RetroArch, games, etc.
 
+### RetroArch input integration
+
+RetroArch supports two joypad drivers relevant to this platform:
+
+| Driver | Config location | How it reads input | Needs `SDL_GAMECONTROLLERCONFIG`? |
+|--------|----------------|-------------------|----------------------------------|
+| `udev` | `/usr/share/retroarch/autoconfig/udev/` | Reads `/dev/input/eventX` directly via evdev | No |
+| `sdl2` | `/usr/share/retroarch/autoconfig/sdl2/` | Uses SDL2 GameController API | Yes |
+
+The meta-retro Yocto layer defaults to `input_joypad_driver = "udev"`. The autoconfig directory is `/usr/share/retroarch/autoconfig` (set via `retroarch-paths.bbclass`).
+
+**Autoconfig profiles** are matched by device name (`input_device`), vendor ID (`input_vendor_id`), and product ID (`input_product_id`). Button/axis indices differ between drivers:
+
+- **udev**: Sequential indices based on evdev capability enumeration. Buttons scan `BTN_JOYSTICK` (0x120) through `KEY_MAX`, then `BTN_MISC` (0x100) through `BTN_JOYSTICK`. Axes scan `ABS_*` sequentially, skipping `ABS_HAT*` (handled separately as hats). D-pad uses hat notation (`h0up`, `h0down`, `h0left`, `h0right`).
+- **sdl2**: SDL2 GameController enum values (0=A, 1=B, 2=X, 3=Y, 4=Back, 5=Guide, 6=Start, 9=LeftShoulder, 10=RightShoulder, 11-14=DPad). Requires `SDL_GAMECONTROLLERCONFIG` with correct GUID.
+
+**Caution**: RetroArch generates a user config at `/root/.config/retroarch/retroarch.cfg` on first run. This can override system defaults (including `input_joypad_driver`). Delete this file when troubleshooting input issues.
+
+**Caution**: The `SDL_GAMECONTROLLERCONFIG` GUID changes whenever the kernel driver's VID/PID/version fields change. After any kernel driver update that modifies `input_dev->id.*`, rediscover the GUID with `--input-debug` and update `phytec-launcher-start.sh`.
+
 ### Adding a new cover
 
 1. Drop a PNG into `files/covers/`
@@ -391,7 +413,9 @@ Since the launcher `fork()/execv()`s child apps, all env vars are inherited by R
 - No automated tests — manual integration testing against a real Weston session
 - Keyboard navigation (arrow keys + Enter) is described in README but not fully integrated
 - The `lv_conf.h` pragma warning ("Possible failure to include lv_conf.h") appears if `-I${STAGING_INCDIR}/lvgl` is missing from the compile flags
-- **MSPM0 SDL_GAMECONTROLLERCONFIG GUID**: Must be discovered on-device after flashing updated kernel driver (run `--input-debug`); the mapping string in `phytec-launcher-start.sh` is currently commented out with a placeholder
+- **MSPM0 SDL_GAMECONTROLLERCONFIG GUID**: Must be rediscovered on-device after any kernel driver change to VID/PID/version (run `--input-debug`). The current GUID in `phytec-launcher-start.sh` is the old name-based GUID from before the VID/PID patch — it needs updating
+- **Hat patch not in kernel bbappend**: `0001-drivers-input-joystick-phyhandheld.c-use-HATS-for-d-.patch` exists in the kernel patch directory but is NOT listed in `SRC_URI` in `linux-phytec-ti_%.bbappend` — must be added for clean builds
+- **`KEY_UNKNOWN` (240) in evdev capabilities**: The kernel driver registers `KEY_UNKNOWN` (likely from an unmapped scan code in the sparse keymap table). Harmless (SDL2/RetroArch ignore keyboard-range codes for joystick input) but should be cleaned up
 - **MSPM0 left joystick Y-axis**: Intermittent issue with up/down not being detected — suspected MSPM0 firmware ADC channel or I2C transmit buffer issue, not a kernel driver problem. Verify with `evtest` on-device
 
 ---
