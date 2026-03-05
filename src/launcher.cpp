@@ -117,9 +117,18 @@ void launch_game(const Game *game)
         }
 
         bool do_kill = false;
+        if (quit_requested) {
+            printf("SIGTERM received — killing child pid %d\n", pid);
+            do_kill = true;
+        }
+
         SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
+        while (SDL_PollEvent(&ev) && !do_kill) {
             switch (ev.type) {
+                case SDL_QUIT:
+                    printf("SDL_QUIT received during wait loop\n");
+                    do_kill = true;
+                    break;
                 case SDL_CONTROLLERDEVICEADDED:
                     if (!sdl_gamepad) {
                         sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
@@ -173,13 +182,34 @@ void launch_game(const Game *game)
         }
 
         if (do_kill) {
-            printf("Home button pressed — killing pid %d\n", pid);
+            printf("Killing child pid %d\n", pid);
             kill(pid, SIGTERM);
-            SDL_Delay(2000);
-            if (waitpid(pid, &status, WNOHANG) != pid) {
-                printf("No graceful exit, sending SIGKILL\n");
+
+            /* Poll for up to 2s in 50ms increments instead of a hard
+             * 2-second block, keeping the process responsive. */
+            bool reaped = false;
+            for (int i = 0; i < 40 && !reaped; i++) {
+                SDL_Delay(50);
+                if (waitpid(pid, &status, WNOHANG) == pid)
+                    reaped = true;
+            }
+
+            if (!reaped) {
+                printf("No graceful exit after 2s, sending SIGKILL\n");
                 kill(pid, SIGKILL);
-                waitpid(pid, &status, 0);
+
+                /* Poll for up to 5s after SIGKILL.  If the process is
+                 * in uninterruptible sleep, give up rather than block
+                 * forever. */
+                for (int i = 0; i < 100 && !reaped; i++) {
+                    SDL_Delay(50);
+                    if (waitpid(pid, &status, WNOHANG) == pid)
+                        reaped = true;
+                }
+
+                if (!reaped)
+                    fprintf(stderr, "WARNING: child pid %d did not exit "
+                            "after SIGKILL — giving up\n", pid);
             }
             child_running = false;
         }
@@ -191,6 +221,10 @@ void launch_game(const Game *game)
         SDL_JoystickClose(wait_joy);
         wait_joy = nullptr;
     }
+
+    /* If shutting down, skip UI restoration — we are about to exit */
+    if (quit_requested)
+        return;
 
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     touch_pressed = false;

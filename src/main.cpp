@@ -19,6 +19,14 @@ SDL_Texture  *sdl_texture  = nullptr;
 int           win_w        = 800;
 int           win_h        = 480;
 
+/* Global shutdown flag — set by SIGTERM/SIGINT handler */
+volatile sig_atomic_t quit_requested = 0;
+
+static void shutdown_handler(int /*sig*/)
+{
+    quit_requested = 1;
+}
+
 /* ── input-debug logging ────────────────────────────────────────── */
 
 static FILE *debug_log_file = nullptr;
@@ -62,6 +70,17 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--input-debug") == 0)
             input_debug = true;
+    }
+
+    /* Install signal handlers for graceful shutdown */
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = shutdown_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGINT,  &sa, nullptr);
     }
 
     load_config();
@@ -187,7 +206,7 @@ int main(int argc, char **argv)
     Uint32 last_tick = SDL_GetTicks();
     bool   running   = true;
 
-    while (running) {
+    while (running && !quit_requested) {
         Uint32 now = SDL_GetTicks();
         lv_tick_inc(now - last_tick);
         last_tick  = now;
