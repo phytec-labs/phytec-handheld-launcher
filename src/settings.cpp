@@ -386,12 +386,12 @@ void open_controller_config()
             ds.toggle_label = tog_lbl;
         }
 
-        const int BTN_COLS = 6;
+        const int BTN_COLS = 5;
         const int BTN_GAP  = 10;
         int avail_w = btn_panel_w - 24;
         int btn_sz  = (avail_w - BTN_GAP * (BTN_COLS - 1)) / BTN_COLS;
-        if (btn_sz > 70) btn_sz = 70;
-        if (btn_sz < 48) btn_sz = 48;
+        if (btn_sz > 100) btn_sz = 100;
+        if (btn_sz < 70)  btn_sz = 70;
         int btn_rows = (num_btns + BTN_COLS - 1) / BTN_COLS;
         int btn_panel_h = btn_rows * (btn_sz + BTN_GAP) + 24;
 
@@ -444,11 +444,11 @@ void open_controller_config()
         lv_obj_set_style_text_font(axis_title, &lv_font_montserrat_42, 0);
         lv_obj_set_pos(axis_title, PAD + axis_panel_x, content_y);
 
-        const int AXIS_ROW_H  = 54;
-        const int LABEL_W     = 120;
-        int bar_w = axis_panel_w - 24 - LABEL_W - 120;
+        const int AXIS_ROW_H  = 70;
+        const int LABEL_W     = 210;
+        int bar_w = axis_panel_w - 24 - LABEL_W - 200;
         if (bar_w < 80) bar_w = 80;
-        const int BAR_H = 30;
+        const int BAR_H = 40;
         int axis_panel_h = num_axes * AXIS_ROW_H + 24;
 
         lv_obj_t *axis_panel = lv_obj_create(ov);
@@ -485,8 +485,8 @@ void open_controller_config()
             lv_obj_clear_flag(bar_bg, LV_OBJ_FLAG_SCROLLABLE);
 
             lv_obj_t *bar_ind = lv_obj_create(bar_bg);
-            lv_obj_set_size(bar_ind, 6, BAR_H - 4);
-            lv_obj_set_pos(bar_ind, bar_w / 2 - 3, 2);
+            lv_obj_set_size(bar_ind, 8, BAR_H - 6);
+            lv_obj_set_pos(bar_ind, bar_w / 2 - 4, 3);
             lv_obj_set_style_bg_color(bar_ind, lv_color_hex(COL_SUBTEXT), 0);
             lv_obj_set_style_bg_opa(bar_ind, LV_OPA_COVER, 0);
             lv_obj_set_style_border_width(bar_ind, 0, 0);
@@ -507,9 +507,9 @@ void open_controller_config()
 
     /* ── Event log (scrollable) ──────────────────────────────── */
     /* Position below buttons/axes — use the taller of the two panels */
-    int btn_rows = (num_btns + 5) / 6;
-    int btn_panel_total = (num_btns > 0) ? content_y + 52 + btn_rows * 80 + 24 : content_y;
-    int axis_panel_total = (num_axes > 0) ? content_y + 52 + num_axes * 54 + 24 : content_y;
+    int btn_rows = (num_btns + 4) / 5;   /* 5 columns */
+    int btn_panel_total = (num_btns > 0) ? content_y + 52 + btn_rows * 110 + 24 : content_y;
+    int axis_panel_total = (num_axes > 0) ? content_y + 52 + num_axes * 70 + 24 : content_y;
     int log_y = ((btn_panel_total > axis_panel_total) ? btn_panel_total : axis_panel_total) + 20;
     int log_h = win_h / 4;
 
@@ -651,8 +651,8 @@ void controller_cfg_on_axis(int axis, int16_t value)
     /* Reposition the indicator within the bar track */
     lv_obj_t *bar_bg = lv_obj_get_parent(bar);
     int bar_w = lv_obj_get_width(bar_bg);
-    int pos = ((value + 32768) * (bar_w - 4)) / 65535;
-    lv_obj_set_pos(bar, pos, 2);
+    int pos = ((value + 32768) * (bar_w - 6)) / 65535;
+    lv_obj_set_pos(bar, pos, 3);
 
     /* Color: accent when past deadzone, dim when in deadzone */
     int abs_val = (value < 0) ? -value : value;
