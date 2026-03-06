@@ -200,7 +200,7 @@ void open_settings_menu()
 
     /* ── Back button (bottom-right, matches results overlay) ── */
     lv_obj_t *btn = lv_button_create(ov);
-    lv_obj_set_size(btn, 280, 72);
+    lv_obj_set_size(btn, 500, 72);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);

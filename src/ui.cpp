@@ -82,7 +82,7 @@ void show_results(const char *app_name, const char *output)
 
     /* Close button — highlighted to show it has focus */
     lv_obj_t *btn = lv_button_create(overlay);
-    lv_obj_set_size(btn, 280, 72);
+    lv_obj_set_size(btn, 500, 72);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
